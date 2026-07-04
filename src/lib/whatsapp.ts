@@ -27,10 +27,16 @@ const getHeaders = () => {
 };
 
 async function sendToMeta(body: object): Promise<{ message_id?: string }> {
+  // Sanitize the target phone number format to strip out +, spaces, or dashes
+  const clonedBody = { ...body } as any;
+  if (clonedBody.to) {
+    clonedBody.to = String(clonedBody.to).replace(/\D/g, "");
+  }
+
   const res = await fetch(getWhatsAppUrl(), {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify(body),
+    body: JSON.stringify(clonedBody),
   });
 
   const data = await res.json();
@@ -138,12 +144,12 @@ export async function sendDateSelectionList(to: string) {
 
   let added = 0;
 
-  while (added < 10) {
-
+  // Loops dynamically until a full batch of 10 valid workdays is achieved
+  while (dates.length < 10) {
     const d = new Date(today);
     d.setDate(today.getDate() + added);
 
-    // Skip Sundays
+    // Skip Sundays safely without truncating list depth
     if (d.getDay() === 0) {
       added++;
       continue;
@@ -181,8 +187,6 @@ export async function sendDateSelectionList(to: string) {
 
 /**
  * Sends WhatsApp Template Message
- * Used after website consultation request
- * and for Bulk Reminder Campaigns.
  */
 export async function sendOutreachTemplate(
   to: string,

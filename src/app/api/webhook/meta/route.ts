@@ -270,8 +270,54 @@ export async function POST(request: Request) {
           );
 
           return;
-        } // 1. Fixed missing bracket
-      } // 2. Fixed missing bracket
+        }
+
+        // ── B.3: "View More" Slots Pagination Selected ───────────────────
+        if (selectedId.startsWith("MORE_")) {
+          // Break apart the ID: "MORE_2026-07-10_9" -> ["MORE", "2026-07-10", "9"]
+          const parts = selectedId.split("_"); 
+          const targetDate = parts[1];
+          const nextIndex = parseInt(parts[2], 10);
+
+          // Fetch their previously saved branch to grab the correct slots
+          const state = await sql`
+            SELECT selected_branch
+            FROM ConversationState
+            WHERE phone = ${senderPhone}
+          `;
+
+          if (state.length > 0) {
+            const branch = state[0].selected_branch as string;
+            const slots = await getAvailableSlots(targetDate, branch);
+
+            // Send the next batch of 9 slots!
+            await sendConsultationSlotSelection(
+              senderPhone,
+              slots,
+              targetDate,
+              nextIndex
+            );
+          } else {
+             // Fallback if state is missing
+             await sendBranchSelectionList(senderPhone);
+          }
+          return;
+        }
+
+        // ── B.4: Final Time Slot Selected ─────────────────────────────────
+        if (selectedId.startsWith("SLOT_")) {
+          const slotId = selectedId.replace("SLOT_", "");
+
+          // TODO: Add your final SQL logic here to mark the slot as booked
+          // e.g., await sql`UPDATE Bookings SET status = 'confirmed' WHERE slot_id = ${slotId}`;
+          
+          await sendWhatsAppText(
+            senderPhone,
+            `✅ Your consultation has been successfully booked! We will share the meeting details shortly.`
+          );
+          return;
+        }
+      } 
 
     } catch (error) {
       console.error("Webhook processing error:", error);

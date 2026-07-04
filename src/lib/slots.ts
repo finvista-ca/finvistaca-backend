@@ -45,7 +45,6 @@ export async function seedSlotsIfNeeded(date: string): Promise<void> {
     let minute = 0;
 
     while (hour < 20 || (hour === 20 && minute === 0)) {
-
       // Skip Lunch Break (2:00 PM - 3:00 PM)
       if (hour === 14) {
         hour = 15;
@@ -84,12 +83,16 @@ export async function getAvailableSlots(
   date: string,
   branch: string
 ): Promise<{ id: number; time: string }[]> {
-
   await seedSlotsIfNeeded(date);
 
   const todayIST = getTodayIST();
 
-  const nowIST = new Date().toLocaleTimeString("en-GB", {
+  // Calculate the time right now, plus a 1-hour buffer
+  // This prevents users from booking a slot that starts in 2 minutes
+  const now = new Date();
+  now.setHours(now.getHours() + 1); 
+
+  const bufferIST = now.toLocaleTimeString("en-GB", {
     timeZone: "Asia/Kolkata",
     hour12: false,
     hour: "2-digit",
@@ -100,19 +103,15 @@ export async function getAvailableSlots(
     SELECT
       t.id,
       to_char(t.time, 'HH12:MI AM') AS slot_time
-
     FROM TimeSlots t
-
     WHERE
       t.date = ${date}::date
       AND t.branch = ${branch}
       AND t.is_booked = FALSE
-
       AND (
-        ${date} != ${todayIST}
-        OR t.time > ${nowIST}::time
+        ${date}::date != ${todayIST}::date
+        OR t.time > ${bufferIST}::time
       )
-
       AND NOT EXISTS (
         SELECT 1
         FROM BlockedSlots b
@@ -121,7 +120,6 @@ export async function getAvailableSlots(
           AND b.time = t.time
           AND b.branch = t.branch
       )
-
     ORDER BY t.time ASC
   `;
 

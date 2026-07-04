@@ -107,17 +107,22 @@ export async function POST(request: Request) {
     `;
 
     // ==================================================
-    // Send WhatsApp Template
+    // Send WhatsApp Template (Graceful Fallback)
     // ==================================================
 
-    await sendOutreachTemplate(
-      whatsappPhone,
-      "consultation_booking",
-      [
-        name.trim(),
-        service?.trim() ?? "General Consultation",
-      ]
-    );
+    try {
+      await sendOutreachTemplate(
+        whatsappPhone,
+        "consultation_booking", // Verify this matches your approved Meta template name!
+        [
+          name.trim(),
+          service?.trim() ?? "General Consultation",
+        ]
+      );
+    } catch (waError) {
+      // Log it so you know the bot failed, but DON'T crash the user's web request
+      console.error(`Failed to send initial WhatsApp template to ${whatsappPhone}:`, waError);
+    }
 
     // ==================================================
     // Response
@@ -126,7 +131,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message:
-        "Consultation request submitted successfully. A WhatsApp message has been sent to continue your booking.",
+        "Consultation request submitted successfully. Our team will contact you shortly.",
     });
 
   } catch (error) {
