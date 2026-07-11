@@ -29,7 +29,6 @@ const getHeaders = () => {
 };
 
 async function sendToMeta(body: object): Promise<{ message_id?: string }> {
-  // Sanitize the target phone number format to strip out +, spaces, or dashes
   const clonedBody = { ...body } as any;
   if (clonedBody.to) {
     clonedBody.to = String(clonedBody.to).replace(/\D/g, "");
@@ -43,12 +42,12 @@ async function sendToMeta(body: object): Promise<{ message_id?: string }> {
 
   const data = await res.json();
 
-console.log("Meta Response:", JSON.stringify(data, null, 2));
+  console.log("Meta Response:", JSON.stringify(data, null, 2));
 
-if (!res.ok) {
-  console.error("Meta API error:", JSON.stringify(data, null, 2));
-  throw new Error(data?.error?.message ?? `Meta API returned ${res.status}`);
-}
+  if (!res.ok) {
+    console.error("Meta API error:", JSON.stringify(data, null, 2));
+    throw new Error(data?.error?.message ?? `Meta API returned ${res.status}`);
+  }
 
   return {
     message_id: data?.messages?.[0]?.id,
@@ -142,18 +141,15 @@ export async function sendBranchSelectionList(to: string) {
  * Consultation Date Selection
  */
 export async function sendDateSelectionList(to: string) {
-
   const dates = [];
   const today = new Date();
 
   let added = 0;
 
-  // Loops dynamically until a full batch of 10 valid workdays is achieved
   while (dates.length < 10) {
     const d = new Date(today);
     d.setDate(today.getDate() + added);
 
-    // Skip Sundays safely without truncating list depth
     if (d.getDay() === 0) {
       added++;
       continue;
@@ -173,7 +169,8 @@ export async function sendDateSelectionList(to: string) {
         day: "numeric",
         month: "short",
       }),
-      description: added === 0 ? "Today" : "",
+      // Fixed: Meta API throws a validation error if description is an empty string
+      ...(added === 0 ? { description: "Today" } : {}),
     });
 
     added++;

@@ -41,66 +41,6 @@ function verifyMetaSignature(
   }
 }
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
-
-function getTodayIST(): string {
-  return new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata",
-  });
-}
-
-async function getUpcomingDates(
-  count = 6
-): Promise<{ value: string; label: string }[]> {
-  const dates: { value: string; label: string }[] = [];
-
-  const todayStr = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata",
-  });
-
-  const [year, month, day] = todayStr.split("-").map(Number);
-
-  let d = new Date(year, month - 1, day);
-
-  let checked = 0;
-
-  while (dates.length < count && checked < 30) {
-    // Skip Sundays
-    if (d.getDay() === 0) {
-      d.setDate(d.getDate() + 1);
-      checked++;
-      continue;
-    }
-
-    const iso =
-      d.getFullYear() +
-      "-" +
-      String(d.getMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(d.getDate()).padStart(2, "0");
-
-    const blocked = await isDateBlocked(iso);
-
-    if (!blocked) {
-      const label = d.toLocaleDateString("en-IN", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      });
-
-      dates.push({
-        value: iso,
-        label,
-      });
-    }
-
-    d.setDate(d.getDate() + 1);
-    checked++;
-  }
-
-  return dates;
-}
-
 // ─── GET: Webhook verification ────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -144,11 +84,13 @@ export async function POST(request: Request) {
 
       const changes = body.entry?.[0]?.changes?.[0]?.value;
       const messages = changes?.messages;
+      const contacts = changes?.contacts;
 
       if (!messages || messages.length === 0) return;
 
       const msg = messages[0];
       const senderPhone = msg.from;
+      const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
 
       // ── Scenario A: Plain text message ───────────────────────────────────────
       if (msg.type === "text") {
@@ -274,12 +216,10 @@ export async function POST(request: Request) {
 
         // ── B.3: "View More" Slots Pagination Selected ───────────────────
         if (selectedId.startsWith("MORE_")) {
-          // Break apart the ID: "MORE_2026-07-10_9" -> ["MORE", "2026-07-10", "9"]
           const parts = selectedId.split("_"); 
           const targetDate = parts[1];
           const nextIndex = parseInt(parts[2], 10);
 
-          // Fetch their previously saved branch to grab the correct slots
           const state = await sql`
             SELECT selected_branch
             FROM ConversationState
@@ -290,7 +230,6 @@ export async function POST(request: Request) {
             const branch = state[0].selected_branch as string;
             const slots = await getAvailableSlots(targetDate, branch);
 
-            // Send the next batch of 9 slots!
             await sendConsultationSlotSelection(
               senderPhone,
               slots,
@@ -298,7 +237,6 @@ export async function POST(request: Request) {
               nextIndex
             );
           } else {
-             // Fallback if state is missing
              await sendBranchSelectionList(senderPhone);
           }
           return;
@@ -308,12 +246,54 @@ export async function POST(request: Request) {
         if (selectedId.startsWith("SLOT_")) {
           const slotId = selectedId.replace("SLOT_", "");
 
-          // TODO: Add your final SQL logic here to mark the slot as booked
-          // e.g., await sql`UPDATE Bookings SET status = 'confirmed' WHERE slot_id = ${slotId}`;
+          // 1. Ensure the Client exists in the database
+          const clientRes = await sql`
+            INSERT INTO Clients (name, phone)
+            VALUES (${senderName}, ${senderPhone})
+            ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+          `;
+          const clientId = clientRes[0].id;
+
+          // 2. Mark the slot as booked (Ensure it wasn't snatched by someone else simultaneously)
+          const slotRes = await sql`
+            UPDATE TimeSlots
+            SET is_booked = TRUE
+            WHERE id = ${slotId} AND is_booked = FALSE
+            RETURNING branch, date, time
+          `;
+
+          if (slotRes.length === 0) {
+            await sendWhatsAppText(
+              senderPhone,
+              "⚠️ Sorry, this slot was just booked by someone else. Please choose another date or time."
+            );
+            return;
+          }
+
+          const bookedSlot = slotRes[0];
+
+          // 3. Create the actual Consultation record
+          await sql`
+            INSERT INTO Consultations (client_id, slot_id, branch, status)
+            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, 'Confirmed')
+          `;
+
+          // 4. Clean up the conversation state to prevent stale data on next booking
+          await sql`
+            DELETE FROM ConversationState
+            WHERE phone = ${senderPhone}
+          `;
           
+          const formattedDate = new Date(bookedSlot.date).toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+            month: "short"
+          });
+
           await sendWhatsAppText(
             senderPhone,
-            `✅ Your consultation has been successfully booked! We will share the meeting details shortly.`
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${bookedSlot.time}\n\nWe will share the meeting details shortly.`
           );
           return;
         }

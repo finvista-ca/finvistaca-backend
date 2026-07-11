@@ -1,3 +1,4 @@
+// lib/slots.ts
 import { sql } from "./db";
 
 const BRANCHES = [

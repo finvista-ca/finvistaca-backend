@@ -21,8 +21,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Read Excel
-    const buffer = await file.arrayBuffer();
+    // Convert ArrayBuffer to Node Buffer for safe xlsx parsing
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
     const workbook = xlsx.read(buffer, {
       type: "buffer",
@@ -87,28 +88,35 @@ export async function POST(request: Request) {
 
       if (!clientName || !rawPhone) continue;
 
-      if (rawPhone.length === 10) {
-        rawPhone = `91${rawPhone}`;
+      // Aligning with standard Indian mobile validation
+      if (rawPhone.length === 12 && rawPhone.startsWith("91")) {
+        rawPhone = rawPhone.substring(2);
+      } else if (rawPhone.length === 11 && rawPhone.startsWith("0")) {
+        rawPhone = rawPhone.substring(1);
       }
 
-      await sql`
-        INSERT INTO OutreachQueue (
-          campaign_id,
-          client_name,
-          phone,
-          reminder_type,
-          status
-        )
-        VALUES (
-          ${campaignId},
-          ${clientName},
-          ${rawPhone},
-          ${reminderType},
-          'Pending'
-        )
-      `;
+      if (rawPhone.length === 10) {
+        const whatsappPhone = `91${rawPhone}`;
 
-      insertedCount++;
+        await sql`
+          INSERT INTO OutreachQueue (
+            campaign_id,
+            client_name,
+            phone,
+            reminder_type,
+            status
+          )
+          VALUES (
+            ${campaignId},
+            ${clientName},
+            ${whatsappPhone},
+            ${reminderType},
+            'Pending'
+          )
+        `;
+
+        insertedCount++;
+      }
     }
 
     return NextResponse.json({
