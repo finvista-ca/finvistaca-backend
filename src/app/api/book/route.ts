@@ -113,7 +113,7 @@ export async function POST(request: Request) {
     try {
       await sendOutreachTemplate(
         whatsappPhone,
-        "consultation_booking", // Verify this matches your approved Meta template name!
+        "booking_initiation", // Verify this matches your approved Meta template name!
         [
           name.trim(),
           service?.trim() ?? "General Consultation",

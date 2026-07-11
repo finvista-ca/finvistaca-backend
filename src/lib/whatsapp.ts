@@ -1,12 +1,14 @@
 const GRAPH_API_VERSION = "v19.0";
 
 const BRANCHES = [
-  "Parvathipuram",
   "Vijayawada",
+  "Kakinada",
   "Visakhapatnam",
+  "Parvathipuram",
   "Bobbili",
   "Peddapuram",
-  "Rayagada (Odisha)",
+  "Hyderabad",
+  "Odisha",
 ];
 
 const getWhatsAppUrl = () => {
