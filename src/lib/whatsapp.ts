@@ -43,10 +43,12 @@ async function sendToMeta(body: object): Promise<{ message_id?: string }> {
 
   const data = await res.json();
 
-  if (!res.ok) {
-    console.error("Meta API error:", JSON.stringify(data));
-    throw new Error(data?.error?.message ?? `Meta API returned ${res.status}`);
-  }
+console.log("Meta Response:", JSON.stringify(data, null, 2));
+
+if (!res.ok) {
+  console.error("Meta API error:", JSON.stringify(data, null, 2));
+  throw new Error(data?.error?.message ?? `Meta API returned ${res.status}`);
+}
 
   return {
     message_id: data?.messages?.[0]?.id,
