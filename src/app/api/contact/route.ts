@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
+import { sendOutreachTemplate } from "@/lib/whatsapp";
 
 export async function POST(request: Request) {
   try {
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const whatsappPhone = `91${cleanPhone}`;
+
     // ==================================================
     // Email Validation (Optional)
     // ==================================================
@@ -78,7 +81,34 @@ export async function POST(request: Request) {
     }
 
     // ==================================================
-    // Save Enquiry
+    // Save / Update Client
+    // ==================================================
+
+    const client = await sql`
+      INSERT INTO Clients (
+        name,
+        phone,
+        email
+      )
+      VALUES (
+        ${name.trim()},
+        ${whatsappPhone},
+        ${email?.trim() ?? null}
+      )
+
+      ON CONFLICT (phone)
+
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        email = COALESCE(EXCLUDED.email, Clients.email)
+
+      RETURNING id
+    `;
+
+    const clientId = client[0].id;
+
+    // ==================================================
+    // Save Contact Enquiry
     // ==================================================
 
     const enquiry = await sql`
@@ -92,7 +122,7 @@ export async function POST(request: Request) {
 
       VALUES (
         ${name.trim()},
-        ${cleanPhone},
+        ${whatsappPhone},
         ${email?.trim() ?? null},
         ${message.trim()},
         'New'
@@ -106,6 +136,50 @@ export async function POST(request: Request) {
         status,
         created_at
     `;
+
+    // ==================================================
+    // Create Consultation
+    // ==================================================
+
+    await sql`
+      INSERT INTO Consultations (
+        client_id,
+        service,
+        message,
+        status
+      )
+
+      VALUES (
+        ${clientId},
+        'General Consultation',
+        ${message.trim()},
+        'Pending'
+      )
+    `;
+
+    // ==================================================
+    // Send WhatsApp Template
+    // ==================================================
+
+    try {
+      await sendOutreachTemplate(
+        whatsappPhone,
+        "booking_initiation",
+        [
+          name.trim(),
+          "General Consultation",
+        ]
+      );
+    } catch (waError) {
+      console.error(
+        "Failed to send booking template:",
+        waError
+      );
+    }
+
+    // ==================================================
+    // Response
+    // ==================================================
 
     return NextResponse.json({
       success: true,
