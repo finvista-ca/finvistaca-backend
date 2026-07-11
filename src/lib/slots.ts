@@ -1,12 +1,14 @@
 import { sql } from "./db";
 
 const BRANCHES = [
-  "Parvathipuram",
   "Vijayawada",
+  "Kakinada",
   "Visakhapatnam",
+  "Parvathipuram",
   "Bobbili",
   "Peddapuram",
-  "Rayagada (Odisha)",
+  "Hyderabad",
+  "Odisha",
 ];
 
 const SLOT_DURATION = 30;
