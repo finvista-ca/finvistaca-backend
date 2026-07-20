@@ -1,31 +1,36 @@
-import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
-import { sendOutreachTemplate } from "@/lib/whatsapp";
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // 1. Destructure the exact keys matching your new frontend
+    // 1. Grab every possible variation your frontend might be sending
     const {
-      fullName,
-      phoneNumber,
-      emailAddress,
-      preferredBranch,
-      services, 
+      fullName, name,
+      phoneNumber, phone,
+      emailAddress, email,
+      preferredBranch, branch,
+      services, service,
     } = body;
+
+    // 2. Consolidate them into final variables
+    const finalName = fullName || name;
+    const finalPhone = phoneNumber || phone;
+    const finalEmail = emailAddress || email;
+    const finalBranch = preferredBranch || branch;
+    const finalService = services || service;
 
     // ==================================================
     // 2. Validation & Formatting
     // ==================================================
-    if (!fullName || !phoneNumber) {
+    
+    // 3. Update the validation to check the consolidated variables
+    if (!finalName || !finalPhone) {
       return NextResponse.json(
         { error: "Name and phone number are required." },
         { status: 400 }
       );
     }
 
-    let cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    let cleanPhone = String(finalPhone).replace(/\D/g, "");
     if (cleanPhone.length === 12 && cleanPhone.startsWith("91")) {
       cleanPhone = cleanPhone.substring(2);
     } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
@@ -47,9 +52,9 @@ export async function POST(request: Request) {
     const clientResult = await sql`
       INSERT INTO Clients (name, phone, email)
       VALUES (
-        ${fullName.trim()},
+        ${finalName.trim()},
         ${whatsappPhone},
-        ${emailAddress?.trim() ?? null}
+        ${finalEmail?.trim() ?? null}
       )
       ON CONFLICT (phone)
       DO UPDATE SET
@@ -67,8 +72,8 @@ export async function POST(request: Request) {
       INSERT INTO Consultations (client_id, service, branch, status)
       VALUES (
         ${clientId},
-        ${services?.trim() ?? "General Consultation"},
-        ${preferredBranch?.trim() ?? "Not Specified"},
+        ${finalService?.trim() ?? "General Consultation"},
+        ${finalBranch?.trim() ?? "Not Specified"},
         'Pending'
       )
     `;
@@ -81,8 +86,8 @@ export async function POST(request: Request) {
         whatsappPhone,
         "booking_initiation", 
         [
-          fullName.trim(),
-          services?.trim() ?? "General Consultation",
+          finalName.trim(),
+          finalService?.trim() ?? "General Consultation",
         ]
       );
     } catch (waError) {
