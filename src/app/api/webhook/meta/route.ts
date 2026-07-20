@@ -121,20 +121,32 @@ export async function POST(request: Request) {
     // ── Scenario A.2: User taps template button ──────────────────────────────
     if (msg.type === "button") {
       const buttonText = (msg.button?.text || "").toLowerCase();
-
-      if (buttonText === "book consultation" || buttonText === "continue booking") {
+      
+      // Look for any keyword related to starting the booking flow
+      if (
+        buttonText.includes("book") || 
+        buttonText.includes("consultation") || 
+        buttonText.includes("view slots") ||
+        buttonText.includes("slots")
+      ) {
         await sendBranchSelectionList(senderPhone);
       }
     }
 
     if (msg.type === "interactive" && msg.interactive?.type === "button_reply") {
       const buttonTitle = (msg.interactive.button_reply?.title || "").toLowerCase();
+      const buttonId = (msg.interactive.button_reply?.id || "").toLowerCase();
 
-      if (buttonTitle === "book consultation" || buttonTitle === "continue booking") {
+      // Check both the visible title and the hidden ID of the button
+      if (
+        buttonTitle.includes("book") || 
+        buttonTitle.includes("view slots") || 
+        buttonTitle.includes("slots") ||
+        buttonId.includes("book")
+      ) {
         await sendBranchSelectionList(senderPhone);
       }
     }
-
     // ── Scenario B: User selects from an interactive LIST ────────────────────────
     if (msg.type === "interactive" && msg.interactive?.type === "list_reply") {
       const selectedId = msg.interactive.list_reply.id as string;
