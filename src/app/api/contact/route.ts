@@ -1,3 +1,7 @@
+import { NextResponse } from "next/server";
+import { sql } from "@/lib/db";
+import { sendOutreachTemplate } from "@/lib/whatsapp";
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
