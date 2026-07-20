@@ -114,14 +114,14 @@ export async function POST(request: Request) {
         const welcomeMessage =
           `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
           `You can request a consultation directly through our website:\n` +
-          `🌐 https://finvista.com\n\n` +
+          `🌐 https://finvistaca.com\n\n` +
           `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
           `For further assistance, call us on +91 83408 14350.`;
 
         await sendWhatsAppText(senderPhone, welcomeMessage);
       }
     }
-    
+
     // ── Scenario A.2: User taps template button ──────────────────────────────
     if (msg.type === "button") {
       const buttonText = (msg.button?.text || "").toLowerCase();
