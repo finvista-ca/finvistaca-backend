@@ -66,12 +66,12 @@ export async function POST(request: Request) {
   // ==========================================
   // 🚨 TEMPORARILY DISABLED FOR DEBUGGING 🚨
   // ==========================================
-  /*
+  
   if (!verifyMetaSignature(rawBody, signature)) {
     console.warn("Invalid Meta webhook signature — request rejected.");
     return new NextResponse("Forbidden", { status: 403 });
   }
-  */
+  
 
   // 1. MASSIVE LOG TO PROVE META IS TALKING TO VERCEL
   console.log("====================================");

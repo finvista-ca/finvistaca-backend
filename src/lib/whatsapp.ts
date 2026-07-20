@@ -150,6 +150,7 @@ export async function sendDateSelectionList(to: string) {
     const d = new Date(today);
     d.setDate(today.getDate() + added);
 
+    // Skip Sundays
     if (d.getDay() === 0) {
       added++;
       continue;
@@ -169,8 +170,8 @@ export async function sendDateSelectionList(to: string) {
         day: "numeric",
         month: "short",
       }),
-      // Fixed: Meta API throws a validation error if description is an empty string
-      ...(added === 0 ? { description: "Today" } : {}),
+      // Tag the very first available option if it happens to be today
+      ...(dates.length === 0 && added === 0 ? { description: "Today" } : {}),
     });
 
     added++;
@@ -225,10 +226,17 @@ export async function sendConsultationSlotSelection(
     id: number;
     time: string;
   }[],
-  date: string,
+  dateIso: string,
   startIndex = 0
 ) {
   const batch = slots.slice(startIndex, startIndex + 9);
+
+  // Format "YYYY-MM-DD" into "Mon, 27 Jul"
+  const formattedDate = new Date(`${dateIso}T00:00:00`).toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 
   const rows = batch.map((slot) => ({
     id: `SLOT_${slot.id}`,
@@ -238,7 +246,7 @@ export async function sendConsultationSlotSelection(
 
   if (slots.length > startIndex + 9) {
     rows.push({
-      id: `MORE_${date}_${startIndex + 9}`,
+      id: `MORE_${dateIso}_${startIndex + 9}`,
       title: "▶ View More Slots",
       description: "Show additional consultation timings",
     });
@@ -246,7 +254,7 @@ export async function sendConsultationSlotSelection(
 
   return sendToMetaList(to, {
     header: "Consultation Slots",
-    body: `Please select your preferred consultation time for ${date}.`,
+    body: `Please select your preferred consultation time for ${formattedDate}.`,
     footer: "Finvista Chartered Accountants",
     buttonLabel: "Select Slot",
     sectionTitle:
