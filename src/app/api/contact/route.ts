@@ -6,202 +6,102 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
+    // 1. Destructure the exact keys matching your new frontend
     const {
-      name,
-      phone,
-      email,
-      message,
+      fullName,
+      phoneNumber,
+      emailAddress,
+      preferredBranch,
+      services, 
     } = body;
 
     // ==================================================
-    // Validation
+    // 2. Validation & Formatting
     // ==================================================
-
-    if (!name || !phone || !message) {
+    if (!fullName || !phoneNumber) {
       return NextResponse.json(
-        {
-          error:
-            "Name, phone and message are required.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Name and phone number are required." },
+        { status: 400 }
       );
     }
 
-    // ==================================================
-    // Phone Validation
-    // ==================================================
-
-    let cleanPhone = String(phone).replace(/\D/g, "");
-
-    if (
-      cleanPhone.length === 12 &&
-      cleanPhone.startsWith("91")
-    ) {
+    let cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    if (cleanPhone.length === 12 && cleanPhone.startsWith("91")) {
       cleanPhone = cleanPhone.substring(2);
-    } else if (
-      cleanPhone.length === 11 &&
-      cleanPhone.startsWith("0")
-    ) {
+    } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
       cleanPhone = cleanPhone.substring(1);
     }
 
     if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
       return NextResponse.json(
-        {
-          error: "Enter a valid Indian mobile number.",
-        },
-        {
-          status: 400,
-        }
+        { error: "Enter a valid 10-digit Indian mobile number." },
+        { status: 400 }
       );
     }
 
     const whatsappPhone = `91${cleanPhone}`;
 
     // ==================================================
-    // Email Validation (Optional)
+    // 3. Database: Clients Table
     // ==================================================
-
-    if (email) {
-      const emailRegex =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!emailRegex.test(email)) {
-        return NextResponse.json(
-          {
-            error: "Enter a valid email address.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-    }
-
-    // ==================================================
-    // Save / Update Client
-    // ==================================================
-
-    const client = await sql`
-      INSERT INTO Clients (
-        name,
-        phone,
-        email
-      )
+    const clientResult = await sql`
+      INSERT INTO Clients (name, phone, email)
       VALUES (
-        ${name.trim()},
+        ${fullName.trim()},
         ${whatsappPhone},
-        ${email?.trim() ?? null}
+        ${emailAddress?.trim() ?? null}
       )
-
       ON CONFLICT (phone)
-
       DO UPDATE SET
         name = EXCLUDED.name,
         email = COALESCE(EXCLUDED.email, Clients.email)
-
       RETURNING id
     `;
-
-    const clientId = client[0].id;
-
-    // ==================================================
-    // Save Contact Enquiry
-    // ==================================================
-
-    const enquiry = await sql`
-      INSERT INTO ContactEnquiries (
-        name,
-        phone,
-        email,
-        message,
-        status
-      )
-
-      VALUES (
-        ${name.trim()},
-        ${whatsappPhone},
-        ${email?.trim() ?? null},
-        ${message.trim()},
-        'New'
-      )
-
-      RETURNING
-        id,
-        name,
-        phone,
-        email,
-        status,
-        created_at
-    `;
+    
+    const clientId = clientResult[0].id;
 
     // ==================================================
-    // Create Consultation
+    // 4. Database: Consultations Table
     // ==================================================
-
     await sql`
-      INSERT INTO Consultations (
-        client_id,
-        service,
-        message,
-        status
-      )
-
+      INSERT INTO Consultations (client_id, service, branch, status)
       VALUES (
         ${clientId},
-        'General Consultation',
-        ${message.trim()},
+        ${services?.trim() ?? "General Consultation"},
+        ${preferredBranch?.trim() ?? "Not Specified"},
         'Pending'
       )
     `;
 
     // ==================================================
-    // Send WhatsApp Template
+    // 5. WhatsApp API Trigger
     // ==================================================
-
     try {
       await sendOutreachTemplate(
         whatsappPhone,
-        "booking_initiation",
+        "booking_initiation", 
         [
-          name.trim(),
-          "General Consultation",
+          fullName.trim(),
+          services?.trim() ?? "General Consultation",
         ]
       );
     } catch (waError) {
-      console.error(
-        "Failed to send booking template:",
-        waError
-      );
+      console.error(`Failed to send WhatsApp template to ${whatsappPhone}:`, waError);
     }
 
     // ==================================================
-    // Response
+    // 6. Success Response
     // ==================================================
-
     return NextResponse.json({
       success: true,
-      message:
-        "Your enquiry has been submitted successfully.",
-      enquiry: enquiry[0],
+      message: "Consultation request submitted successfully.",
     });
 
   } catch (error) {
-    console.error(
-      "Contact Enquiry Error:",
-      error
-    );
-
+    console.error("Consultation Booking Error:", error);
     return NextResponse.json(
-      {
-        error:
-          "Something went wrong. Please try again later.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Something went wrong. Please try again later." },
+      { status: 500 }
     );
   }
 }
