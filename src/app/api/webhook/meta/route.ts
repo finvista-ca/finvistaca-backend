@@ -102,8 +102,13 @@ export async function POST(request: Request) {
     if (msg.type === "text") {
       const textBody = (msg.text?.body || "").toLowerCase();
 
-      if (textBody.includes("consultation") || textBody.includes("book")) {
-        console.log("👉 Triggering branch selection for:", senderPhone);
+      // We added "view slots" and "slots" here!
+      if (
+        textBody.includes("consultation") || 
+        textBody.includes("book") ||
+        textBody.includes("view slots") ||
+        textBody.includes("slots")
+      ) {
         await sendBranchSelectionList(senderPhone);
       } else {
         const welcomeMessage =
@@ -113,11 +118,10 @@ export async function POST(request: Request) {
           `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
           `For further assistance, call us on +91 83408 14350.`;
 
-        console.log("👉 Sending welcome message to:", senderPhone);
         await sendWhatsAppText(senderPhone, welcomeMessage);
       }
     }
-
+    
     // ── Scenario A.2: User taps template button ──────────────────────────────
     if (msg.type === "button") {
       const buttonText = (msg.button?.text || "").toLowerCase();
