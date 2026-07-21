@@ -50,61 +50,18 @@ export async function POST(request: Request) {
     const senderPhone = msg.from;
     const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
 
-    // ── Scenario A: Plain text message ───────────────────────────────────────
-    if (msg.type === "text") {
-      const textBody = (msg.text?.body || "").toLowerCase();
-
-      if (
-        textBody.includes("consultation") || 
-        textBody.includes("book") ||
-        textBody.includes("view slots") ||
-        textBody.includes("slots")
-      ) {
-        // Clear any old leftover state before starting a fresh booking flow
-        await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
-        await sendBranchSelectionList(senderPhone);
-      } else {
-        const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
-        
-        if (stateCheck.length === 0 || !stateCheck[0].selected_service) {
-          const welcomeMessage =
-            `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
-            `You can request a consultation directly through our website:\n` +
-            `🌐 https://finvistaca.com\n\n` +
-            `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
-            `For further assistance, call us on +91 83408 14350.`;
-
-          await sendWhatsAppText(senderPhone, welcomeMessage);
-        }
-      }
-    }
-
-    // Only trigger branch selection on standalone buttons if user is actively trying to book
-    if (msg.type === "button" || (msg.type === "interactive" && msg.interactive?.type === "button_reply")) {
-      const buttonPayload = msg.interactive?.button_reply?.id || "";
-      if (buttonPayload.includes("BOOK") || buttonPayload.includes("SLOT") || buttonPayload.includes("BRANCH")) {
-        await sendBranchSelectionList(senderPhone);
-      }
-    }
-
-    // ── Scenario B: User selects from an interactive LIST ────────────────────────
+    // ── 1. HANDLE LIST REPLIES FIRST (Interactive selection clicks) ──────────
     if (msg.type === "interactive" && msg.interactive?.type === "list_reply") {
       const selectedId = msg.interactive.list_reply.id as string;
       const selectedTitle = msg.interactive.list_reply.title as string;
 
-      // ── B.1: Branch Selected ─────────────────────────────────────────
+      // B.1: Branch Selected
       if (selectedId.startsWith("BRANCH_")) {
         const branch = selectedId.replace("BRANCH_", "");
 
         await sql`
-          INSERT INTO ConversationState (
-            phone,
-            selected_branch
-          )
-          VALUES (
-            ${senderPhone},
-            ${branch}
-          )
+          INSERT INTO ConversationState (phone, selected_branch)
+          VALUES (${senderPhone}, ${branch})
           ON CONFLICT (phone)
           DO UPDATE SET
             selected_branch = EXCLUDED.selected_branch,
@@ -112,12 +69,12 @@ export async function POST(request: Request) {
         `;
 
         await sendDateSelectionList(senderPhone);
+        return new NextResponse("OK", { status: 200 });
       }
 
-      // ── B.2: Date Selected ───────────────────────────────────────────
+      // B.2: Date Selected
       else if (selectedId.startsWith("DATE_")) {
         const selectedDate = selectedId.replace("DATE_", "");
-
         const blocked = await isDateBlocked(selectedDate);
 
         if (blocked) {
@@ -131,16 +88,12 @@ export async function POST(request: Request) {
 
         await sql`
           UPDATE ConversationState
-          SET
-            selected_date = ${selectedDate},
-            updated_at = CURRENT_TIMESTAMP
+          SET selected_date = ${selectedDate}, updated_at = CURRENT_TIMESTAMP
           WHERE phone = ${senderPhone}
         `;
 
         const state = await sql`
-          SELECT selected_branch
-          FROM ConversationState
-          WHERE phone = ${senderPhone}
+          SELECT selected_branch FROM ConversationState WHERE phone = ${senderPhone}
         `;
 
         if (state.length === 0) {
@@ -156,49 +109,37 @@ export async function POST(request: Request) {
             );
             await sendDateSelectionList(senderPhone);
           } else {
-            await sendConsultationSlotSelection(
-              senderPhone,
-              slots,
-              selectedDate,
-              0
-            );
+            await sendConsultationSlotSelection(senderPhone, slots, selectedDate, 0);
           }
         }
+        return new NextResponse("OK", { status: 200 });
       }
 
-      // ── B.3: "View More" Slots Pagination Selected ───────────────────
+      // B.3: "View More" Slots Pagination Selected
       else if (selectedId.startsWith("MORE_")) {
         const parts = selectedId.split("_"); 
         const targetDate = parts[1];
         const nextIndex = parseInt(parts[2], 10);
 
         const state = await sql`
-          SELECT selected_branch
-          FROM ConversationState
-          WHERE phone = ${senderPhone}
+          SELECT selected_branch FROM ConversationState WHERE phone = ${senderPhone}
         `;
 
         if (state.length > 0) {
           const branch = state[0].selected_branch as string;
           const slots = await getAvailableSlots(targetDate, branch);
-
-          await sendConsultationSlotSelection(
-            senderPhone,
-            slots,
-            targetDate,
-            nextIndex
-          );
+          await sendConsultationSlotSelection(senderPhone, slots, targetDate, nextIndex);
         } else {
-           await sendBranchSelectionList(senderPhone);
+          await sendBranchSelectionList(senderPhone);
         }
+        return new NextResponse("OK", { status: 200 });
       }
 
-      // ── B.4: Final Time Slot Selected ─────────────────────────────────
+      // B.4: Final Time Slot Selected
       else if (selectedId.startsWith("SLOT_")) {
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
 
-        // 1. Ensure the Client exists in the database
         const clientRes = await sql`
           INSERT INTO Clients (name, phone)
           VALUES (${senderName}, ${senderPhone})
@@ -207,7 +148,6 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Fetch stored service & branch state
         const stateRes = await sql`
           SELECT selected_service, selected_branch, selected_date 
           FROM ConversationState 
@@ -216,7 +156,6 @@ export async function POST(request: Request) {
         const state = stateRes[0] || {};
         const chosenService = state.selected_service || "General Consultation";
 
-        // 3. Mark the slot as booked safely using ID or text fallback
         let bookedSlot = null;
 
         const slotRes = await sql`
@@ -251,7 +190,6 @@ export async function POST(request: Request) {
             "⚠️ Sorry, this slot could not be verified or was already booked. Please choose another time."
           );
         } else {
-          // 4. Force insertion into Consultations table so it renders on admin dashboard
           await sql`
             INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
             VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
@@ -263,20 +201,53 @@ export async function POST(request: Request) {
             month: "short"
           });
 
-          // 5. Send confirmation message instantly to WhatsApp
           await sendWhatsAppText(
             senderPhone,
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // 6. COMPLETELY wipe conversation state so no lingering prompts repeat
-          await sql`
-            DELETE FROM ConversationState
-            WHERE phone = ${senderPhone}
-          `;
+          // Clear state so no leftover triggers happen
+          await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
+        }
+        return new NextResponse("OK", { status: 200 });
+      }
+    }
+
+    // ── 2. HANDLE PLAIN TEXT MESSAGES ────────────────────────────────────────
+    if (msg.type === "text") {
+      const textBody = (msg.text?.body || "").toLowerCase();
+
+      if (
+        textBody.includes("consultation") || 
+        textBody.includes("book") ||
+        textBody.includes("view slots") ||
+        textBody.includes("slots")
+      ) {
+        await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
+        await sendBranchSelectionList(senderPhone);
+      } else {
+        const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
+        
+        if (stateCheck.length === 0 || !stateCheck[0].selected_service) {
+          const welcomeMessage =
+            `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
+            `You can request a consultation directly through our website:\n` +
+            `🌐 https://finvistaca.com\n\n` +
+            `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
+            `For further assistance, call us on +91 83408 14350.`;
+
+          await sendWhatsAppText(senderPhone, welcomeMessage);
         }
       }
-    } 
+      return new NextResponse("OK", { status: 200 });
+    }
+
+    // ── 3. HANDLE BUTTON CLICKS ──────────────────────────────────────────────
+    if (msg.type === "button" || (msg.type === "interactive" && msg.interactive?.type === "button_reply")) {
+      await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
+      await sendBranchSelectionList(senderPhone);
+      return new NextResponse("OK", { status: 200 });
+    }
 
   } catch (error) {
     console.error("🚨 Webhook processing error:", error);
