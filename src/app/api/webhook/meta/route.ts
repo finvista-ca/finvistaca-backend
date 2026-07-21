@@ -50,8 +50,6 @@ export async function POST(request: Request) {
     const senderPhone = msg.from;
     const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
 
-    // Check if the user has an active conversation state. 
-    // If they don't have an active state, check if they booked recently to ignore stale list clicks.
     const stateCheck = await sql`
       SELECT selected_service, selected_branch, selected_date 
       FROM ConversationState 
@@ -63,8 +61,7 @@ export async function POST(request: Request) {
       const selectedId = msg.interactive.list_reply.id as string;
       const selectedTitle = msg.interactive.list_reply.title as string;
 
-      // If a user clicks an old list option after their state was deleted (booking finished), ignore it completely
-      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_")) {
+      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_") && !selectedId.startsWith("BRANCH_")) {
         return new NextResponse("OK", { status: 200 });
       }
 
@@ -150,7 +147,6 @@ export async function POST(request: Request) {
 
       // B.4: Final Time Slot Selected
       else if (selectedId.startsWith("SLOT_")) {
-        // Prevent double booking if already processed
         const activeState = stateCheck[0] || {};
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
@@ -216,7 +212,6 @@ export async function POST(request: Request) {
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // Permanently wipe out conversation state to close the session
           await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         }
         return new NextResponse("OK", { status: 200 });
@@ -236,7 +231,6 @@ export async function POST(request: Request) {
         await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         await sendBranchSelectionList(senderPhone);
       } else {
-        // If they text something else after completing a booking, keep it closed or give a gentle guide
         if (stateCheck.length === 0) {
           await sendWhatsAppText(
             senderPhone,
