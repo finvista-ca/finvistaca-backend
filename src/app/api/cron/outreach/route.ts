@@ -5,21 +5,7 @@ import { sql } from "@/lib/db";
 import { sendOutreachTemplate } from "@/lib/whatsapp";
 
 export async function GET(request: Request) {
-  // ==================================================
-  // Security
-  // ==================================================
-
-  const authHeader = request.headers.get("authorization");
-
-  if (
-    process.env.NODE_ENV === "production" &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
-  ) {
-    return new NextResponse("Unauthorized", {
-      status: 401,
-    });
-  }
-
+ 
   try {
     // ==================================================
     // Fetch Pending Queue
