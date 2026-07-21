@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       const selectedId = msg.interactive.list_reply.id as string;
       const selectedTitle = msg.interactive.list_reply.title as string;
 
-      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_") && !selectedId.startsWith("BRANCH_")) {
+      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_") && !selectedId.startsWith("BRANCH_") && !selectedId.startsWith("DATE_") && !selectedId.startsWith("MORE_")) {
         return new NextResponse("OK", { status: 200 });
       }
 
@@ -138,6 +138,7 @@ export async function POST(request: Request) {
         if (state.length > 0) {
           const branch = state[0].selected_branch as string;
           const slots = await getAvailableSlots(targetDate, branch);
+          // Fixed: Properly pass nextIndex so pagination advances correctly!
           await sendConsultationSlotSelection(senderPhone, slots, targetDate, nextIndex);
         } else {
           await sendBranchSelectionList(senderPhone);
@@ -148,6 +149,12 @@ export async function POST(request: Request) {
       // B.4: Final Time Slot Selected
       else if (selectedId.startsWith("SLOT_")) {
         const activeState = stateCheck[0] || {};
+        
+        // If state is already gone, it means this slot click was a duplicate payload callback. Ignore it!
+        if (!activeState.selected_branch || !activeState.selected_date) {
+          return new NextResponse("OK", { status: 200 });
+        }
+
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
 
@@ -172,7 +179,7 @@ export async function POST(request: Request) {
 
         if (slotRes.length > 0) {
           bookedSlot = slotRes[0];
-        } else if (activeState.selected_branch && activeState.selected_date) {
+        } else {
           const fallbackRes = await sql`
             UPDATE TimeSlots
             SET is_booked = TRUE, status = 'Booked'
@@ -212,6 +219,7 @@ export async function POST(request: Request) {
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
+          // Immediately clear the state so any delayed/duplicate webhook hits are blocked
           await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         }
         return new NextResponse("OK", { status: 200 });
