@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
         const response = await sendOutreachTemplate(
           row.phone,
-          "finvista_reminder",
+          "bulk_message",
           variables
         );
 
