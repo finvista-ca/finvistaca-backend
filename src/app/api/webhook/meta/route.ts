@@ -60,6 +60,8 @@ export async function POST(request: Request) {
         textBody.includes("view slots") ||
         textBody.includes("slots")
       ) {
+        // Clear any old leftover state before starting a fresh booking flow
+        await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         await sendBranchSelectionList(senderPhone);
       } else {
         const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
@@ -77,8 +79,12 @@ export async function POST(request: Request) {
       }
     }
 
+    // Only trigger branch selection on standalone buttons if user is actively trying to book
     if (msg.type === "button" || (msg.type === "interactive" && msg.interactive?.type === "button_reply")) {
-      await sendBranchSelectionList(senderPhone);
+      const buttonPayload = msg.interactive?.button_reply?.id || "";
+      if (buttonPayload.includes("BOOK") || buttonPayload.includes("SLOT") || buttonPayload.includes("BRANCH")) {
+        await sendBranchSelectionList(senderPhone);
+      }
     }
 
     // ── Scenario B: User selects from an interactive LIST ────────────────────────
@@ -263,7 +269,7 @@ export async function POST(request: Request) {
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // 6. Clean up conversation state
+          // 6. COMPLETELY wipe conversation state so no lingering prompts repeat
           await sql`
             DELETE FROM ConversationState
             WHERE phone = ${senderPhone}
