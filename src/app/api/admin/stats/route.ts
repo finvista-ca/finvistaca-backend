@@ -8,33 +8,25 @@ export async function GET() {
     const campaigns = await sql`
       SELECT
         c.id,
-        c.filename,
-        c.total_count,
-        c.created_at,
+        c.filename AS name,
+        c.total_count AS "totalRecipients",
+        c.created_at AS "uploadDate",
 
         COUNT(q.id) FILTER (
-          WHERE q.status = 'Sent'
-        )::int AS sent_count,
-
-        COUNT(q.id) FILTER (
-          WHERE q.status = 'Delivered'
-        )::int AS delivered_count,
+          WHERE q.status = 'Sent' OR q.status = 'Delivered'
+        )::int AS sent,
 
         COUNT(q.id) FILTER (
           WHERE q.status = 'Failed'
-        )::int AS failed_count,
+        )::int AS failed,
 
         COUNT(q.id) FILTER (
           WHERE q.status = 'Pending'
-        )::int AS pending_count
+        )::int AS pending
 
       FROM OutreachCampaigns c
-
-      LEFT JOIN OutreachQueue q
-      ON c.id = q.campaign_id
-
+      LEFT JOIN OutreachQueue q ON c.id = q.campaign_id
       GROUP BY c.id
-
       ORDER BY c.created_at DESC
     `;
 
