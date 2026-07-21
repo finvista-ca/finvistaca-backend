@@ -249,10 +249,9 @@ export async function POST(request: Request) {
         }
       }
 
-// ── B.4: Final Time Slot Selected ─────────────────────────────────
+      // ── B.4: Final Time Slot Selected ─────────────────────────────────
       else if (selectedId.startsWith("SLOT_")) {
-        // The selectedTitle or the button text contains the time (e.g., "11:00 AM")
-        const selectedTimeText = selectedTitle; // Or parse from selectedId if you encode time into it
+        const slotIdFromPayload = selectedId.replace("SLOT_", "");
 
         // 1. Ensure the Client exists in the database
         const clientRes = await sql`
@@ -278,19 +277,28 @@ export async function POST(request: Request) {
         const { selected_branch, selected_date, selected_service } = stateRes[0];
         const chosenService = selected_service || "General Consultation";
 
-        // 3. Find and lock the matching slot in TimeSlots by Branch, Date, and Time
-        const slotRes = await sql`
+        // 3. Fallback matching: Try matching by ID first, and if that fails, match by branch, date, and time text
+        let slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
-          WHERE branch = ${selected_branch}
-            AND date = ${selected_date}::date
-            AND (is_booked = FALSE OR is_booked IS NULL)
-            AND (
-              to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTimeText + "%"}
-              OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTimeText + "%"}
-            )
+          WHERE id = ${slotIdFromPayload} AND (is_booked = FALSE OR is_booked IS NULL)
           RETURNING id, branch, date, time
         `;
+
+        if (slotRes.length === 0) {
+          slotRes = await sql`
+            UPDATE TimeSlots
+            SET is_booked = TRUE, status = 'Booked'
+            WHERE branch = ${selected_branch}
+              AND date = ${selected_date}::date
+              AND (is_booked = FALSE OR is_booked IS NULL)
+              AND (
+                to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"}
+                OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"}
+              )
+            RETURNING id, branch, date, time
+          `;
+        }
 
         if (slotRes.length === 0) {
           await sendWhatsAppText(
@@ -320,7 +328,7 @@ export async function POST(request: Request) {
 
           await sendWhatsAppText(
             senderPhone,
-            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTimeText}\n\nWe will share the meeting details shortly.`
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
         }
       }
