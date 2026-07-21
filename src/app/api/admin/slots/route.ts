@@ -8,7 +8,7 @@ function isAuthorized(request: Request): boolean {
   return true;
 }
 
-// app/api/admin/slots/route.ts (GET function update)
+// ── GET /api/admin/slots — Fetch slots with smart booking status sync ─────
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -23,7 +23,10 @@ export async function GET(request: Request) {
       SELECT
         t.id,
         to_char(t.time, 'HH12:MI AM') AS time,
-        COALESCE(t.status, 'Available') AS status,
+        CASE 
+          WHEN c.id IS NOT NULL AND c.status != 'Cancelled' THEN 'Booked'
+          ELSE COALESCE(t.status, 'Available')
+        END AS status,
         cl.name AS "clientName",
         cl.phone AS "clientPhone"
       FROM TimeSlots t
@@ -40,6 +43,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }
+
 // ── POST /api/admin/slots — Generate daily slots or add custom ────────
 export async function POST(request: Request) {
   if (!isAuthorized(request)) {

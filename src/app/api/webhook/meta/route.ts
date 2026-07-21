@@ -102,7 +102,6 @@ export async function POST(request: Request) {
     if (msg.type === "text") {
       const textBody = (msg.text?.body || "").toLowerCase();
 
-      // We added "view slots" and "slots" here!
       if (
         textBody.includes("consultation") || 
         textBody.includes("book") ||
@@ -126,7 +125,6 @@ export async function POST(request: Request) {
     if (msg.type === "button") {
       const buttonText = (msg.button?.text || "").toLowerCase();
       
-      // Look for any keyword related to starting the booking flow
       if (
         buttonText.includes("book") || 
         buttonText.includes("consultation") || 
@@ -141,7 +139,6 @@ export async function POST(request: Request) {
       const buttonTitle = (msg.interactive.button_reply?.title || "").toLowerCase();
       const buttonId = (msg.interactive.button_reply?.id || "").toLowerCase();
 
-      // Check both the visible title and the hidden ID of the button
       if (
         buttonTitle.includes("book") || 
         buttonTitle.includes("view slots") || 
@@ -270,11 +267,11 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Mark the slot as booked
+        // 2. Mark the slot as booked (Updating BOTH flags so Admin Slot Manager syncs instantly)
         const slotRes = await sql`
           UPDATE TimeSlots
-          SET is_booked = TRUE
-          WHERE id = ${slotId} AND is_booked = FALSE
+          SET is_booked = TRUE, status = 'Booked'
+          WHERE id = ${slotId} AND (is_booked = FALSE OR is_booked IS NULL)
           RETURNING branch, date, time
         `;
 
@@ -288,8 +285,8 @@ export async function POST(request: Request) {
 
           // 3. Create the actual Consultation record
           await sql`
-            INSERT INTO Consultations (client_id, slot_id, branch, status)
-            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, 'Confirmed')
+            INSERT INTO Consultations (client_id, slot_id, branch, status, date, time)
+            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
           `;
 
           // 4. Clean up the conversation state
@@ -316,6 +313,5 @@ export async function POST(request: Request) {
     console.error("🚨 Webhook processing error:", error);
   }
 
-  // ONLY RETURN 200 AFTER EVERYTHING HAS FINISHED PROCESSING!
   return new NextResponse("OK", { status: 200 });
 }
