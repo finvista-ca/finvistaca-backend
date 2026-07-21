@@ -9,7 +9,7 @@ const BRANCHES = [
   "Bobbili",
   "Peddapuram",
   "Hyderabad",
-  "Odisha",
+  "Rayagada(Odisha)",
 ];
 
 const SLOT_DURATION = 30;

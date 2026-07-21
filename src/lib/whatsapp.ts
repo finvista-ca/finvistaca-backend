@@ -8,7 +8,7 @@ const BRANCHES = [
   "Bobbili",
   "Peddapuram",
   "Hyderabad",
-  "Odisha",
+  "Rayagada(Odisha)",
 ];
 
 const getWhatsAppUrl = () => {
