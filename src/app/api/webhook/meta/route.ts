@@ -36,6 +36,70 @@ function verifyMetaSignature(
   }
 }
 
+// ─── Helper: Send Service Selection Interactive List (Multiple Sections) ───────
+async function sendServiceSelectionList(phone: string) {
+  // WhatsApp interactive lists allow up to 10 rows total across all sections.
+  // Grouping all core categories so users can access every service type.
+  const sections = [
+    {
+      title: "Business Registration",
+      rows: [
+        { id: "SERV_BUS_1", title: "Private Limited Co." },
+        { id: "SERV_BUS_2", title: "Limited Liability Partnership" },
+        { id: "SERV_BUS_3", title: "Proprietorship / Partnership" },
+        { id: "SERV_BUS_4", title: "Section 8 / Trust / Society" },
+      ],
+    },
+    {
+      title: "Tax & Compliance",
+      rows: [
+        { id: "SERV_TAX_1", title: "Personal Tax Advisory" },
+        { id: "SERV_TAX_2", title: "Corporate Tax Advisory" },
+        { id: "SERV_TAX_3", title: "ROC Annual Compliance" },
+        { id: "SERV_TAX_4", title: "GST Advisory & Returns" },
+      ],
+    },
+    {
+      title: "Audits, Licenses & Loans",
+      rows: [
+        { id: "SERV_OTH_1", title: "Statutory & Tax Audit" },
+        { id: "SERV_OTH_2", title: "FSSAI, ISO & MSME Reg." },
+        { id: "SERV_OTH_3", title: "Business Loan Assistance" },
+        { id: "SERV_OTH_4", title: "General Consultation" },
+      ],
+    },
+  ];
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: phone,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "Select Service Category" },
+      body: { text: "Please choose the primary category and service you require for your consultation." },
+      footer: { text: "Finvista Chartered Accountants" },
+      action: {
+        button: "Choose Service",
+        sections: sections,
+      },
+    },
+  };
+
+  const token = process.env.META_WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.META_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 // ─── GET: Webhook verification ────────────────────────────────────────────────
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -167,6 +231,33 @@ export async function POST(request: Request) {
             updated_at = CURRENT_TIMESTAMP
         `;
 
+        // Check if service was already provided via website frontend form submission
+        const stateRes = await sql`
+          SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}
+        `;
+        const existingService = stateRes[0]?.selected_service;
+
+        if (!existingService) {
+          // If started directly in WhatsApp, prompt for full service list selection next!
+          await sendServiceSelectionList(senderPhone);
+        } else {
+          // If initiated from website form, skip service selection and go straight to date selection
+          await sendDateSelectionList(senderPhone);
+        }
+      }
+
+      // ── B.1.5: Service Selected (For direct WhatsApp users) ───────────
+      else if (selectedId.startsWith("SERV_")) {
+        const chosenService = selectedTitle;
+
+        await sql`
+          UPDATE ConversationState
+          SET
+            selected_service = ${chosenService},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE phone = ${senderPhone}
+        `;
+
         await sendDateSelectionList(senderPhone);
       }
 
@@ -262,7 +353,7 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Fetch stored conversation state (branch, date, service)
+        // 2. Fetch stored conversation state (branch, date, service) with fallback
         const stateRes = await sql`
           SELECT selected_branch, selected_date, selected_service 
           FROM ConversationState 
@@ -277,7 +368,7 @@ export async function POST(request: Request) {
         const { selected_branch, selected_date, selected_service } = stateRes[0];
         const chosenService = selected_service || "General Consultation";
 
-        // 3. Fallback matching: Try matching by ID first, and if that fails, match by branch, date, and time text
+        // 3. Fallback matching: Match by ID first, then by branch, date, and time text
         let slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
@@ -285,7 +376,7 @@ export async function POST(request: Request) {
           RETURNING id, branch, date, time
         `;
 
-        if (slotRes.length === 0) {
+        if (slotRes.length === 0 && selected_branch && selected_date) {
           slotRes = await sql`
             UPDATE TimeSlots
             SET is_booked = TRUE, status = 'Booked'
