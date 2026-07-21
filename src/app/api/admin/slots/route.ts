@@ -8,34 +8,22 @@ function isAuthorized(request: Request): boolean {
   return true;
 }
 
-// ── GET /api/admin/slots?date=YYYY-MM-DD&branch=BranchName ──────────
+// app/api/admin/slots/route.ts (GET function update)
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
     const branch = searchParams.get('branch');
 
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !branch) {
-      return NextResponse.json(
-        { error: 'Provide a valid date in YYYY-MM-DD format and a branch.' },
-        { status: 400 }
-      );
-    }
-
-    // Optional: Keep your seed function if you are generating slots automatically
-    if (typeof seedSlotsIfNeeded === 'function') {
-      await seedSlotsIfNeeded(date);
+    if (!date || !branch) {
+      return NextResponse.json({ error: 'Date and branch are required.' }, { status: 400 });
     }
 
     const slots = await sql`
       SELECT
         t.id,
         to_char(t.time, 'HH12:MI AM') AS time,
-        COALESCE(t.status, CASE WHEN t.is_booked THEN 'Booked' ELSE 'Available' END) as status,
+        COALESCE(t.status, 'Available') AS status,
         cl.name AS "clientName",
         cl.phone AS "clientPhone"
       FROM TimeSlots t
@@ -46,15 +34,12 @@ export async function GET(request: Request) {
       ORDER BY t.time ASC
     `;
 
-    // Flattened: Return array directly for TanStack Query
     return NextResponse.json(slots);
-
   } catch (error) {
     console.error('Fetch slots error:', error);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }
-
 // ── POST /api/admin/slots — Generate daily slots or add custom ────────
 export async function POST(request: Request) {
   if (!isAuthorized(request)) {
