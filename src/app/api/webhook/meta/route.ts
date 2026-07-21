@@ -62,14 +62,18 @@ export async function POST(request: Request) {
       ) {
         await sendBranchSelectionList(senderPhone);
       } else {
-        const welcomeMessage =
-          `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
-          `You can request a consultation directly through our website:\n` +
-          `🌐 https://finvistaca.com\n\n` +
-          `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
-          `For further assistance, call us on +91 83408 14350.`;
+        const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
+        
+        if (stateCheck.length === 0 || !stateCheck[0].selected_service) {
+          const welcomeMessage =
+            `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
+            `You can request a consultation directly through our website:\n` +
+            `🌐 https://finvistaca.com\n\n` +
+            `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
+            `For further assistance, call us on +91 83408 14350.`;
 
-        await sendWhatsAppText(senderPhone, welcomeMessage);
+          await sendWhatsAppText(senderPhone, welcomeMessage);
+        }
       }
     }
 
@@ -185,7 +189,7 @@ export async function POST(request: Request) {
 
       // ── B.4: Final Time Slot Selected ─────────────────────────────────
       else if (selectedId.startsWith("SLOT_")) {
-        const slotId = selectedId.replace("SLOT_", "");
+        const slotId = selectedId.replace("SLOT_", "").trim();
 
         // 1. Ensure the Client exists in the database
         const clientRes = await sql`
@@ -198,19 +202,35 @@ export async function POST(request: Request) {
 
         // 2. Fetch stored service & branch state
         const stateRes = await sql`
-          SELECT selected_service, selected_branch 
+          SELECT selected_service, selected_branch, selected_date 
           FROM ConversationState 
           WHERE phone = ${senderPhone}
         `;
-        const chosenService = stateRes[0]?.selected_service || "General Consultation";
+        const state = stateRes[0] || {};
+        const chosenService = state.selected_service || "General Consultation";
 
         // 3. Mark the slot as booked
-        const slotRes = await sql`
+        let slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
-          WHERE id = ${slotId} AND (is_booked = FALSE OR is_booked IS NULL)
-          RETURNING branch, date, time
+          WHERE id = ${slotId}::integer AND (is_booked = FALSE OR is_booked IS NULL)
+          RETURNING id, branch, date, time
         `;
+
+        if (slotRes.length === 0 && state.selected_branch && state.selected_date) {
+          slotRes = await sql`
+            UPDATE TimeSlots
+            SET is_booked = TRUE, status = 'Booked'
+            WHERE branch = ${state.selected_branch} 
+              AND date = ${state.selected_date}::date 
+              AND (is_booked = FALSE OR is_booked IS NULL)
+              AND (
+                to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"}
+                OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"}
+              )
+            RETURNING id, branch, date, time
+          `;
+        }
 
         if (slotRes.length === 0) {
           await sendWhatsAppText(
@@ -220,28 +240,29 @@ export async function POST(request: Request) {
         } else {
           const bookedSlot = slotRes[0];
 
-          // 4. Create the actual Consultation record WITH the correct service
+          // 4. Force insertion into Consultations using client_id, slot_id, branch, service, status, date, time
           await sql`
             INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
-            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
+            VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
           `;
 
-          // 5. Clean up the conversation state
-          await sql`
-            DELETE FROM ConversationState
-            WHERE phone = ${senderPhone}
-          `;
-          
           const formattedDate = new Date(bookedSlot.date).toLocaleDateString("en-IN", {
             weekday: "short",
             day: "numeric",
             month: "short"
           });
 
+          // 5. Send confirmation message instantly to WhatsApp
           await sendWhatsAppText(
             senderPhone,
-            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${bookedSlot.time}\n\nWe will share the meeting details shortly.`
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
+
+          // 6. Clean up the conversation state
+          await sql`
+            DELETE FROM ConversationState
+            WHERE phone = ${senderPhone}
+          `;
         }
       }
     } 
