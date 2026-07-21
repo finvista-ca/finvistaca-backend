@@ -36,18 +36,18 @@ function verifyMetaSignature(
   }
 }
 
-// ─── Helper: Send Service Selection Interactive List (Multiple Sections) ───────
+// ─── Helper: Send Service Selection Interactive List ───────────────────────
 async function sendServiceSelectionList(phone: string) {
-  // WhatsApp interactive lists allow up to 10 rows total across all sections.
-  // Grouping all core categories so users can access every service type.
+  // WhatsApp interactive lists allow up to 10 rows per section / message.
+  // Grouping comprehensive service offerings to stay within WhatsApp limits.
   const sections = [
     {
       title: "Business Registration",
       rows: [
         { id: "SERV_BUS_1", title: "Private Limited Co." },
-        { id: "SERV_BUS_2", title: "Limited Liability Partnership" },
-        { id: "SERV_BUS_3", title: "Proprietorship / Partnership" },
-        { id: "SERV_BUS_4", title: "Section 8 / Trust / Society" },
+        { id: "SERV_BUS_2", title: "Limited Liability Ptnr" }, // shortened to fit 24 char limit
+        { id: "SERV_BUS_3", title: "Proprietorship / Ptnr" },
+        { id: "SERV_BUS_4", title: "Section 8 / Trust / Soc." },
       ],
     },
     {
@@ -60,11 +60,11 @@ async function sendServiceSelectionList(phone: string) {
       ],
     },
     {
-      title: "Audits, Licenses & Loans",
+      title: "Audits, Loans & Licenses",
       rows: [
         { id: "SERV_OTH_1", title: "Statutory & Tax Audit" },
         { id: "SERV_OTH_2", title: "FSSAI, ISO & MSME Reg." },
-        { id: "SERV_OTH_3", title: "Business Loan Assistance" },
+        { id: "SERV_OTH_3", title: "Business Loan Assist." },
         { id: "SERV_OTH_4", title: "General Consultation" },
       ],
     },
@@ -77,8 +77,8 @@ async function sendServiceSelectionList(phone: string) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: "Select Service Category" },
-      body: { text: "Please choose the primary category and service you require for your consultation." },
+      header: { type: "text", text: "Select Service" },
+      body: { text: "Please choose the primary service you require for your consultation." },
       footer: { text: "Finvista Chartered Accountants" },
       action: {
         button: "Choose Service",
@@ -216,32 +216,32 @@ export async function POST(request: Request) {
       if (selectedId.startsWith("BRANCH_")) {
         const branch = selectedId.replace("BRANCH_", "");
 
+        // Ensure row exists or create it safely
         await sql`
-          INSERT INTO ConversationState (
-            phone,
-            selected_branch
-          )
-          VALUES (
-            ${senderPhone},
-            ${branch}
-          )
+          INSERT INTO ConversationState (phone, selected_branch)
+          VALUES (${senderPhone}, ${branch})
           ON CONFLICT (phone)
           DO UPDATE SET
             selected_branch = EXCLUDED.selected_branch,
             updated_at = CURRENT_TIMESTAMP
         `;
 
-        // Check if service was already provided via website frontend form submission
-        const stateRes = await sql`
-          SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}
-        `;
-        const existingService = stateRes[0]?.selected_service;
+        // Check if a service was already provided via website frontend form
+        let existingService = null;
+        try {
+          const stateRes = await sql`
+            SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}
+          `;
+          existingService = stateRes[0]?.selected_service;
+        } catch (err) {
+          console.warn("Could not read selected_service column, proceeding safely:", err);
+        }
 
         if (!existingService) {
-          // If started directly in WhatsApp, prompt for full service list selection next!
+          // Direct WhatsApp flow: prompt for service selection next
           await sendServiceSelectionList(senderPhone);
         } else {
-          // If initiated from website form, skip service selection and go straight to date selection
+          // Website flow: service is already preset, skip straight to date selection
           await sendDateSelectionList(senderPhone);
         }
       }
@@ -353,20 +353,27 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Fetch stored conversation state (branch, date, service) with fallback
-        const stateRes = await sql`
-          SELECT selected_branch, selected_date, selected_service 
-          FROM ConversationState 
-          WHERE phone = ${senderPhone}
-        `;
+        // 2. Fetch stored conversation state safely
+        let selected_branch = null;
+        let selected_date = null;
+        let chosenService = "General Consultation";
 
-        if (stateRes.length === 0) {
-          await sendWhatsAppText(senderPhone, "⚠️ Session expired. Please reply with *Book* to restart.");
-          return new NextResponse("OK", { status: 200 });
+        try {
+          const stateRes = await sql`
+            SELECT selected_branch, selected_date, selected_service 
+            FROM ConversationState 
+            WHERE phone = ${senderPhone}
+          `;
+          if (stateRes.length > 0) {
+            selected_branch = stateRes[0].selected_branch;
+            selected_date = stateRes[0].selected_date;
+            if (stateRes[0].selected_service) {
+              chosenService = stateRes[0].selected_service;
+            }
+          }
+        } catch (err) {
+          console.warn("Could not query conversation state columns safely:", err);
         }
-
-        const { selected_branch, selected_date, selected_service } = stateRes[0];
-        const chosenService = selected_service || "General Consultation";
 
         // 3. Fallback matching: Match by ID first, then by branch, date, and time text
         let slotRes = await sql`
@@ -399,7 +406,7 @@ export async function POST(request: Request) {
         } else {
           const bookedSlot = slotRes[0];
 
-          // 4. Create the actual Consultation record WITH the correct service
+          // 4. Create the actual Consultation record
           await sql`
             INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
             VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})

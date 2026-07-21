@@ -145,9 +145,12 @@ export async function initializeDatabase() {
     phone VARCHAR(20) PRIMARY KEY,
     selected_branch VARCHAR(100),
     selected_date DATE,
+     selected_service VARCHAR(255),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 `;
+
+
 
     // ===========================
     // INDEXES
