@@ -26,15 +26,6 @@ export async function isDateBlocked(date: string): Promise<boolean> {
 }
 
 export async function seedSlotsIfNeeded(date: string): Promise<void> {
-  const existing = await sql`
-    SELECT 1
-    FROM TimeSlots
-    WHERE date = ${date}::date
-    LIMIT 1
-  `;
-
-  if (existing.length > 0) return;
-
   const [year, month, day] = date.split("-").map(Number);
   const dateObj = new Date(year, month - 1, day);
 
