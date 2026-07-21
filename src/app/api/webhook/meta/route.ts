@@ -50,10 +50,23 @@ export async function POST(request: Request) {
     const senderPhone = msg.from;
     const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
 
-    // ── 1. HANDLE LIST REPLIES FIRST (Interactive selection clicks) ──────────
+    // Check if the user has an active conversation state. 
+    // If they don't have an active state, check if they booked recently to ignore stale list clicks.
+    const stateCheck = await sql`
+      SELECT selected_service, selected_branch, selected_date 
+      FROM ConversationState 
+      WHERE phone = ${senderPhone}
+    `;
+
+    // ── 1. HANDLE LIST REPLIES (Interactive selection clicks) ──────────
     if (msg.type === "interactive" && msg.interactive?.type === "list_reply") {
       const selectedId = msg.interactive.list_reply.id as string;
       const selectedTitle = msg.interactive.list_reply.title as string;
+
+      // If a user clicks an old list option after their state was deleted (booking finished), ignore it completely
+      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_")) {
+        return new NextResponse("OK", { status: 200 });
+      }
 
       // B.1: Branch Selected
       if (selectedId.startsWith("BRANCH_")) {
@@ -137,6 +150,8 @@ export async function POST(request: Request) {
 
       // B.4: Final Time Slot Selected
       else if (selectedId.startsWith("SLOT_")) {
+        // Prevent double booking if already processed
+        const activeState = stateCheck[0] || {};
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
 
@@ -148,31 +163,26 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        const stateRes = await sql`
-          SELECT selected_service, selected_branch, selected_date 
-          FROM ConversationState 
-          WHERE phone = ${senderPhone}
-        `;
-        const state = stateRes[0] || {};
-        const chosenService = state.selected_service || "General Consultation";
+        const chosenService = activeState.selected_service || "General Consultation";
 
         let bookedSlot = null;
 
         const slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
-          WHERE id = ${slotIdNum}
+          WHERE id = ${slotIdNum} AND is_booked = FALSE
           RETURNING id, branch, date, time
         `;
 
         if (slotRes.length > 0) {
           bookedSlot = slotRes[0];
-        } else if (state.selected_branch && state.selected_date) {
+        } else if (activeState.selected_branch && activeState.selected_date) {
           const fallbackRes = await sql`
             UPDATE TimeSlots
             SET is_booked = TRUE, status = 'Booked'
-            WHERE branch = ${state.selected_branch} 
-              AND date = ${state.selected_date}::date 
+            WHERE branch = ${activeState.selected_branch} 
+              AND date = ${activeState.selected_date}::date 
+              AND is_booked = FALSE
               AND (
                 to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"}
                 OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"}
@@ -187,7 +197,7 @@ export async function POST(request: Request) {
         if (!bookedSlot) {
           await sendWhatsAppText(
             senderPhone,
-            "⚠️ Sorry, this slot could not be verified or was already booked. Please choose another time."
+            "⚠️ Sorry, this slot was already booked or is no longer available. Please type *Book* to start a new selection."
           );
         } else {
           await sql`
@@ -206,7 +216,7 @@ export async function POST(request: Request) {
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // Clear state so no leftover triggers happen
+          // Permanently wipe out conversation state to close the session
           await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         }
         return new NextResponse("OK", { status: 200 });
@@ -226,17 +236,12 @@ export async function POST(request: Request) {
         await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         await sendBranchSelectionList(senderPhone);
       } else {
-        const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
-        
-        if (stateCheck.length === 0 || !stateCheck[0].selected_service) {
-          const welcomeMessage =
-            `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
-            `You can request a consultation directly through our website:\n` +
-            `🌐 https://finvistaca.com\n\n` +
-            `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
-            `For further assistance, call us on +91 83408 14350.`;
-
-          await sendWhatsAppText(senderPhone, welcomeMessage);
+        // If they text something else after completing a booking, keep it closed or give a gentle guide
+        if (stateCheck.length === 0) {
+          await sendWhatsAppText(
+            senderPhone,
+            `Your consultation booking is closed. If you need to book another session, simply reply with *Book*.`
+          );
         }
       }
       return new NextResponse("OK", { status: 200 });
