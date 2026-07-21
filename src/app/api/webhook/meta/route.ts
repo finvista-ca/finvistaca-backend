@@ -249,9 +249,10 @@ export async function POST(request: Request) {
         }
       }
 
-      // ── B.4: Final Time Slot Selected ─────────────────────────────────
+// ── B.4: Final Time Slot Selected ─────────────────────────────────
       else if (selectedId.startsWith("SLOT_")) {
-        const slotId = selectedId.replace("SLOT_", "");
+        // The selectedTitle or the button text contains the time (e.g., "11:00 AM")
+        const selectedTimeText = selectedTitle; // Or parse from selectedId if you encode time into it
 
         // 1. Ensure the Client exists in the database
         const clientRes = await sql`
@@ -262,26 +263,39 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Fetch stored service & branch state
+        // 2. Fetch stored conversation state (branch, date, service)
         const stateRes = await sql`
-          SELECT selected_service, selected_branch 
+          SELECT selected_branch, selected_date, selected_service 
           FROM ConversationState 
           WHERE phone = ${senderPhone}
         `;
-        const chosenService = stateRes[0]?.selected_service || "General Consultation";
 
-        // 3. Mark the slot as booked
+        if (stateRes.length === 0) {
+          await sendWhatsAppText(senderPhone, "⚠️ Session expired. Please reply with *Book* to restart.");
+          return new NextResponse("OK", { status: 200 });
+        }
+
+        const { selected_branch, selected_date, selected_service } = stateRes[0];
+        const chosenService = selected_service || "General Consultation";
+
+        // 3. Find and lock the matching slot in TimeSlots by Branch, Date, and Time
         const slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
-          WHERE id = ${slotId} AND (is_booked = FALSE OR is_booked IS NULL)
-          RETURNING branch, date, time
+          WHERE branch = ${selected_branch}
+            AND date = ${selected_date}::date
+            AND (is_booked = FALSE OR is_booked IS NULL)
+            AND (
+              to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTimeText + "%"}
+              OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTimeText + "%"}
+            )
+          RETURNING id, branch, date, time
         `;
 
         if (slotRes.length === 0) {
           await sendWhatsAppText(
             senderPhone,
-            "⚠️ Sorry, this slot was just booked by someone else. Please choose another date or time."
+            "⚠️ Sorry, this slot was just booked by someone else or couldn't be matched. Please choose another time."
           );
         } else {
           const bookedSlot = slotRes[0];
@@ -289,7 +303,7 @@ export async function POST(request: Request) {
           // 4. Create the actual Consultation record WITH the correct service
           await sql`
             INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
-            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
+            VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
           `;
 
           // 5. Clean up the conversation state
@@ -306,7 +320,7 @@ export async function POST(request: Request) {
 
           await sendWhatsAppText(
             senderPhone,
-            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${bookedSlot.time}\n\nWe will share the meeting details shortly.`
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTimeText}\n\nWe will share the meeting details shortly.`
           );
         }
       }
