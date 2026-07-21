@@ -49,6 +49,19 @@ export async function POST(request: Request) {
 
     const senderPhone = msg.from;
     const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
+    const messageId = msg.id;
+
+    // ── 0. STRICT DEDUPLICATION GUARD ────────────────────────────────────────
+    // Prevents Meta's concurrent webhook retries from processing the same event twice
+    const webhookCheck = await sql`
+      INSERT INTO ProcessedWebhooks (message_id) 
+      VALUES (${messageId}) 
+      ON CONFLICT (message_id) DO NOTHING 
+      RETURNING message_id
+    `;
+    if (webhookCheck.length === 0) {
+      return new NextResponse("OK", { status: 200 });
+    }
 
     const stateCheck = await sql`
       SELECT selected_service, selected_branch, selected_date 
@@ -60,10 +73,6 @@ export async function POST(request: Request) {
     if (msg.type === "interactive" && msg.interactive?.type === "list_reply") {
       const selectedId = msg.interactive.list_reply.id as string;
       const selectedTitle = msg.interactive.list_reply.title as string;
-
-      if (stateCheck.length === 0 && !selectedId.startsWith("SLOT_") && !selectedId.startsWith("BRANCH_") && !selectedId.startsWith("DATE_") && !selectedId.startsWith("MORE_")) {
-        return new NextResponse("OK", { status: 200 });
-      }
 
       // B.1: Branch Selected
       if (selectedId.startsWith("BRANCH_")) {
@@ -138,7 +147,6 @@ export async function POST(request: Request) {
         if (state.length > 0) {
           const branch = state[0].selected_branch as string;
           const slots = await getAvailableSlots(targetDate, branch);
-          // Fixed: Properly pass nextIndex so pagination advances correctly!
           await sendConsultationSlotSelection(senderPhone, slots, targetDate, nextIndex);
         } else {
           await sendBranchSelectionList(senderPhone);
@@ -148,15 +156,18 @@ export async function POST(request: Request) {
 
       // B.4: Final Time Slot Selected
       else if (selectedId.startsWith("SLOT_")) {
-        const activeState = stateCheck[0] || {};
+        const activeState = stateCheck[0];
         
-        // If state is already gone, it means this slot click was a duplicate payload callback. Ignore it!
-        if (!activeState.selected_branch || !activeState.selected_date) {
+        // If state was already wiped out, this is a duplicate webhook callback. Ignore it!
+        if (!activeState || !activeState.selected_branch || !activeState.selected_date) {
           return new NextResponse("OK", { status: 200 });
         }
 
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
+
+        // Immediately wipe the state FIRST to lock out any concurrent duplicate slot clicks
+        await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
 
         const clientRes = await sql`
           INSERT INTO Clients (name, phone)
@@ -167,7 +178,6 @@ export async function POST(request: Request) {
         const clientId = clientRes[0].id;
 
         const chosenService = activeState.selected_service || "General Consultation";
-
         let bookedSlot = null;
 
         const slotRes = await sql`
@@ -218,9 +228,6 @@ export async function POST(request: Request) {
             senderPhone,
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
-
-          // Immediately clear the state so any delayed/duplicate webhook hits are blocked
-          await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
         }
         return new NextResponse("OK", { status: 200 });
       }
