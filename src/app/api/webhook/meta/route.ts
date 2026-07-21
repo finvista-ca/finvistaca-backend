@@ -71,7 +71,6 @@ export async function POST(request: Request) {
     console.warn("Invalid Meta webhook signature — request rejected.");
     return new NextResponse("Forbidden", { status: 403 });
   }
-  
 
   // 1. MASSIVE LOG TO PROVE META IS TALKING TO VERCEL
   console.log("====================================");
@@ -267,7 +266,15 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        // 2. Mark the slot as booked (Updating BOTH flags so Admin Slot Manager syncs instantly)
+        // 2. Fetch stored service & branch state
+        const stateRes = await sql`
+          SELECT selected_service, selected_branch 
+          FROM ConversationState 
+          WHERE phone = ${senderPhone}
+        `;
+        const chosenService = stateRes[0]?.selected_service || "General Consultation";
+
+        // 3. Mark the slot as booked
         const slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
@@ -283,13 +290,13 @@ export async function POST(request: Request) {
         } else {
           const bookedSlot = slotRes[0];
 
-          // 3. Create the actual Consultation record
+          // 4. Create the actual Consultation record WITH the correct service
           await sql`
-            INSERT INTO Consultations (client_id, slot_id, branch, status, date, time)
-            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
+            INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
+            VALUES (${clientId}, ${slotId}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
           `;
 
-          // 4. Clean up the conversation state
+          // 5. Clean up the conversation state
           await sql`
             DELETE FROM ConversationState
             WHERE phone = ${senderPhone}
@@ -303,7 +310,7 @@ export async function POST(request: Request) {
 
           await sendWhatsAppText(
             senderPhone,
-            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${bookedSlot.time}\n\nWe will share the meeting details shortly.`
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${bookedSlot.time}\n\nWe will share the meeting details shortly.`
           );
         }
       }
