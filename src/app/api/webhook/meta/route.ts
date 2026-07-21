@@ -50,7 +50,35 @@ export async function POST(request: Request) {
     const senderPhone = msg.from;
     const senderName = contacts?.[0]?.profile?.name || "WhatsApp User";
 
-    if (msg.type === "text" || msg.type === "button" || (msg.type === "interactive" && msg.interactive?.type === "button_reply")) {
+    // ── Scenario A: Plain text message ───────────────────────────────────────
+    if (msg.type === "text") {
+      const textBody = (msg.text?.body || "").toLowerCase();
+
+      if (
+        textBody.includes("consultation") || 
+        textBody.includes("book") ||
+        textBody.includes("view slots") ||
+        textBody.includes("slots")
+      ) {
+        await sendBranchSelectionList(senderPhone);
+      } else {
+        // Only trigger if there is NO pending website form state for this phone number
+        const stateCheck = await sql`SELECT selected_service FROM ConversationState WHERE phone = ${senderPhone}`;
+        
+        if (stateCheck.length === 0 || !stateCheck[0].selected_service) {
+          const welcomeMessage =
+            `👋 Welcome to *Finvista Chartered Accountants*.\n\n` +
+            `You can request a consultation directly through our website:\n` +
+            `🌐 https://finvistaca.com\n\n` +
+            `Or simply reply with *Book* to continue your consultation booking on WhatsApp.\n\n` +
+            `For further assistance, call us on +91 83408 14350.`;
+
+          await sendWhatsAppText(senderPhone, welcomeMessage);
+        }
+      }
+    }
+
+    if (msg.type === "button" || (msg.type === "interactive" && msg.interactive?.type === "button_reply")) {
       await sendBranchSelectionList(senderPhone);
     }
 
@@ -98,7 +126,8 @@ export async function POST(request: Request) {
           await sendBranchSelectionList(senderPhone);
         }
       } else if (selectedId.startsWith("SLOT_")) {
-        const slotIdFromPayload = selectedId.replace("SLOT_", "");
+        const slotIdFromPayload = selectedId.replace("SLOT_", "").trim();
+        
         const clientRes = await sql`
           INSERT INTO Clients (name, phone) VALUES (${senderName}, ${senderPhone})
           ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id
@@ -111,15 +140,17 @@ export async function POST(request: Request) {
 
         let slotRes = await sql`
           UPDATE TimeSlots SET is_booked = TRUE, status = 'Booked'
-          WHERE id = ${slotIdFromPayload} AND (is_booked = FALSE OR is_booked IS NULL)
+          WHERE id = ${slotIdFromPayload}::integer AND (is_booked = FALSE OR is_booked IS NULL)
           RETURNING id, branch, date, time
         `;
 
         if (slotRes.length === 0 && state.selected_branch && state.selected_date) {
           slotRes = await sql`
             UPDATE TimeSlots SET is_booked = TRUE, status = 'Booked'
-            WHERE branch = ${state.selected_branch} AND date = ${state.selected_date}::date AND (is_booked = FALSE OR is_booked IS NULL)
-            AND (to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"} OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"})
+            WHERE branch = ${state.selected_branch} 
+              AND date = ${state.selected_date}::date 
+              AND (is_booked = FALSE OR is_booked IS NULL)
+              AND (to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"} OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"})
             RETURNING id, branch, date, time
           `;
         }
@@ -128,19 +159,25 @@ export async function POST(request: Request) {
           await sendWhatsAppText(senderPhone, "⚠️ Sorry, this slot was just booked. Please choose another time.");
         } else {
           const booked = slotRes[0];
+
           await sql`
             INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
             VALUES (${clientId}, ${booked.id}, ${booked.branch}, ${chosenService}, 'Confirmed', ${booked.date}, ${booked.time})
           `;
+
           await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
           
           const fmtDate = new Date(booked.date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-          await sendWhatsAppText(senderPhone, `✅ Successfully booked!\n\n📍 Branch: ${booked.branch}\n🛠️ Service: ${chosenService}\n📅 Date: ${fmtDate}\n⏰ Time: ${selectedTitle}`);
+          
+          await sendWhatsAppText(
+            senderPhone, 
+            `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${booked.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${fmtDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
+          );
         }
       }
     }
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("Webhook processing error:", error);
   }
 
   return new NextResponse("OK", { status: 200 });
