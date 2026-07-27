@@ -8,6 +8,95 @@ import { sendOutreachTemplate } from "@/lib/whatsapp";
 const CRON_SECRET =
   process.env.CRON_SECRET || "development_cron_bypass";
 
+// Map your database reminder types to their verified Meta template names and required variable fields
+const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => string[] }> = {
+  "income_tax_due_dates": {
+    name: "income_tax_due_dates_reminder",
+    getVars: (row) => [
+      row.var1 || "I R K & ASSOCIATES",
+      row.var2 || "CA Rama Kishore Itla",
+      row.var3 || "2026-27",
+      row.var4 || "31st July 2026",
+      row.var5 || "31st August 2026",
+      row.var6 || "31st October 2026",
+      row.var7 || "30th November 2026",
+      row.var8 || "I R K & ASSOCIATES",
+      row.var9 || "CA Rama Kishore Itla",
+      row.var10 || "8340814350",
+      row.var11 || "8143505094",
+      row.var12 || "Irkassociatess@gmail.com",
+    ],
+  },
+  "income_tax_doc_checklist": {
+    name: "income_tax_doc_checklist",
+    getVars: (row) => [
+      row.var1 || "I R K & ASSOCIATES",
+      row.var2 || "CA Rama Kishore Itla",
+      row.var3 || "2025-26",
+      row.var4 || "01.04.2025",
+      row.var5 || "31.03.2026",
+      row.var6 || "I R K & ASSOCIATES",
+      row.var7 || "CA Rama Kishore Itla",
+      row.var8 || "8340814350",
+      row.var9 || "8143505094",
+      row.var10 || "Irkassociatess@gmail.com",
+    ],
+  },
+  "gst_annual_return": {
+    name: "gst_annual_return_reminder",
+    getVars: (row) => [
+      row.var1 || "I R K & ASSOCIATES",
+      row.var2 || "CA Rama Kishore Itla",
+      row.var3 || "31st December",
+      row.var4 || "₹100",
+      row.var5 || "₹100",
+      row.var6 || "₹200",
+      row.var7 || "I R K & ASSOCIATES",
+      row.var8 || "CA Rama Kishore Itla",
+      row.var9 || "7993856920",
+      row.var10 || "8143505094",
+      row.var11 || "Irkassociatess@gmail.com",
+    ],
+  },
+  "gst_regular_returns": {
+    name: "gst_regular_returns_reminder",
+    getVars: (row) => [
+      row.var1 || "I R K & ASSOCIATES",
+      row.var2 || "CA Rama Kishore Itla",
+      row.var3 || "11th",
+      row.var4 || "13th",
+      row.var5 || "20th",
+      row.var6 || "22nd",
+      row.var7 || "₹20",
+      row.var8 || "₹10",
+      row.var9 || "₹10",
+      row.var10 || "₹50",
+      row.var11 || "₹25",
+      row.var12 || "₹25",
+      row.var13 || "18% per annum",
+      row.var14 || "7th",
+      row.var15 || "I R K & ASSOCIATES",
+      row.var16 || "CA Rama Kishore Itla",
+      row.var17 || "7993856920",
+      row.var18 || "8143505094",
+      row.var19 || "Irkassociatess@gmail.com",
+    ],
+  },
+  "roc_annual_returns": {
+    name: "roc_annual_returns_reminder",
+    getVars: (row) => [
+      row.var1 || "I R K & ASSOCIATES",
+      row.var2 || "CA Rama Kishore Itla",
+      row.var3 || "₹100 per day",
+      row.var4 || "I R K & ASSOCIATES",
+      row.var5 || "CA Rama Kishore Itla",
+      row.var6 || "+91 9908285223",
+      row.var7 || "8143505094",
+      row.var8 || "Irkassociatess@gmail.com",
+    ],
+  },
+};
+
 export async function GET(request: Request) {
   // Verify request
   const authHeader = request.headers.get("authorization");
@@ -51,7 +140,9 @@ export async function GET(request: Request) {
         phone,
         client_name,
         reminder_type,
-        campaign_id;
+        campaign_id,
+        var1, var2, var3, var4, var5, var6, var7, var8, var9, var10,
+        var11, var12, var13, var14, var15, var16, var17, var18, var19;
     `;
 
     if (batch.length === 0) {
@@ -65,14 +156,17 @@ export async function GET(request: Request) {
 
     for (const row of batch) {
       try {
-        const variables = [
-          row.client_name,
-          row.reminder_type,
-        ];
+        const config = TEMPLATE_MAPPING[row.reminder_type];
+
+        if (!config) {
+          throw new Error(`Unknown reminder_type: ${row.reminder_type}`);
+        }
+
+        const variables = config.getVars(row);
 
         const response = await sendOutreachTemplate(
           row.phone,
-          "bulk_message",
+          config.name,
           variables
         );
 

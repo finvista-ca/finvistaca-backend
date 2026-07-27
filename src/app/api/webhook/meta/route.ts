@@ -111,6 +111,12 @@ export async function POST(request: Request) {
           WHERE phone = ${senderPhone}
         `;
 
+        // ⚡ INSTANT FEEDBACK: Let the user know slots are being fetched
+        await sendWhatsAppText(
+          senderPhone,
+          `⏳ Fetching available slots for ${selectedTitle}... Please give us a second.`
+        );
+
         const state = await sql`
           SELECT selected_branch FROM ConversationState WHERE phone = ${senderPhone}
         `;
