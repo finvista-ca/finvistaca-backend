@@ -6,7 +6,7 @@ import { sendOutreachTemplate } from "@/lib/whatsapp";
 
 // A secure token checked by Vercel to ensure only Vercel can trigger this cron job
 const CRON_SECRET =
-  process.env.CRON_SECRET || "development_cron_bypass";
+  process.env.CRON_SECRET || "development_cron_bypass";    
 
 // Map your database reminder types to their verified Meta template names and required variable fields
 const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => string[] }> = {
