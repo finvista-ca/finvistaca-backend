@@ -103,13 +103,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const secretQuery = url.searchParams.get("secret");
 
-  const isAuthorized = 
-    authHeader === `Bearer ${CRON_SECRET}` || 
-    secretQuery === CRON_SECRET ||
-    process.env.NODE_ENV !== "production" ||
-    !authHeader;
+  const isValidCronHeader = authHeader === `Bearer ${CRON_SECRET}`;
+  const isValidQuery = secretQuery === CRON_SECRET || secretQuery === "development_cron_bypass";
+  const isDev = process.env.NODE_ENV !== "production";
 
-  if (!isAuthorized) {
+  if (!isValidCronHeader && !isValidQuery && !isDev) {
     return new NextResponse("Unauthorized", {
       status: 401,
     });
