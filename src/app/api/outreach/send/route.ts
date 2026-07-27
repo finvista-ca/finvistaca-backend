@@ -97,6 +97,88 @@ const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => st
   },
 };
 
+// Core logic handler for processing batches
+async function processOutreachBatch() {
+  // Lock next 10 pending messages
+  const batch = await sql`
+    WITH locked_rows AS (
+      SELECT id
+      FROM OutreachQueue
+      WHERE status = 'Pending'
+      ORDER BY created_at ASC
+      LIMIT 10
+      FOR UPDATE SKIP LOCKED
+    )
+
+    UPDATE OutreachQueue
+    SET status = 'Processing'
+    WHERE id IN (
+      SELECT id FROM locked_rows
+    )
+
+    RETURNING
+      id,
+      phone,
+      client_name,
+      reminder_type,
+      campaign_id,
+      var1, var2, var3, var4, var5, var6, var7, var8, var9, var10,
+      var11, var12, var13, var14, var15, var16, var17, var18, var19;
+  `;
+
+  if (batch.length === 0) {
+    return { processed: 0, success: 0, failed: 0 };
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const row of batch) {
+    try {
+      const config = TEMPLATE_MAPPING[row.reminder_type];
+
+      if (!config) {
+        throw new Error(`Unknown reminder_type: ${row.reminder_type}`);
+      }
+
+      const variables = config.getVars(row);
+
+      const response = await sendOutreachTemplate(
+        row.phone,
+        config.name,
+        variables
+      );
+
+      if (response.message_id) {
+        await sql`
+          UPDATE OutreachQueue
+          SET
+            status = 'Sent',
+            sent_at = CURRENT_TIMESTAMP,
+            meta_message_id = ${response.message_id}
+          WHERE id = ${row.id}
+        `;
+
+        successCount++;
+      } else {
+        throw new Error("Meta API returned no message ID.");
+      }
+    } catch (error) {
+      console.error(`Failed sending to ${row.phone}`, error);
+
+      await sql`
+        UPDATE OutreachQueue
+        SET status = 'Failed'
+        WHERE id = ${row.id}
+      `;
+
+      failCount++;
+    }
+  }
+
+  return { processed: batch.length, success: successCount, failed: failCount };
+}
+
 export async function GET(request: Request) {
   // Verify request
   const authHeader = request.headers.get("authorization");
@@ -114,110 +196,46 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Lock next 10 pending messages
-    const batch = await sql`
-      WITH locked_rows AS (
-        SELECT id
-        FROM OutreachQueue
-        WHERE status = 'Pending'
-        ORDER BY created_at ASC
-        LIMIT 10
-        FOR UPDATE SKIP LOCKED
-      )
+    // Process the first batch immediately
+    let totalProcessed = 0;
+    let totalSuccess = 0;
+    let totalFailed = 0;
 
-      UPDATE OutreachQueue
+    let result = await processOutreachBatch();
+    totalProcessed += result.processed;
+    totalSuccess += result.success;
+    totalFailed += result.failed;
 
-      SET status = 'Processing'
+    // If there are still more pending messages left, loop automatically to clear the queue instantly!
+    while (result.processed > 0) {
+      result = await processOutreachBatch();
+      totalProcessed += result.processed;
+      totalSuccess += result.success;
+      totalFailed += result.failed;
+    }
 
-      WHERE id IN (
-        SELECT id FROM locked_rows
-      )
-
-      RETURNING
-        id,
-        phone,
-        client_name,
-        reminder_type,
-        campaign_id,
-        var1, var2, var3, var4, var5, var6, var7, var8, var9, var10,
-        var11, var12, var13, var14, var15, var16, var17, var18, var19;
-    `;
-
-    if (batch.length === 0) {
+    if (totalProcessed === 0) {
       return NextResponse.json({
         message: "No pending outreach messages.",
       });
     }
 
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const row of batch) {
-      try {
-        const config = TEMPLATE_MAPPING[row.reminder_type];
-
-        if (!config) {
-          throw new Error(`Unknown reminder_type: ${row.reminder_type}`);
-        }
-
-        const variables = config.getVars(row);
-
-        const response = await sendOutreachTemplate(
-          row.phone,
-          config.name,
-          variables
-        );
-
-        if (response.message_id) {
-          await sql`
-            UPDATE OutreachQueue
-
-            SET
-              status = 'Sent',
-              sent_at = CURRENT_TIMESTAMP,
-              meta_message_id = ${response.message_id}
-
-            WHERE id = ${row.id}
-          `;
-
-          successCount++;
-        } else {
-          throw new Error(
-            "Meta API returned no message ID."
-          );
-        }
-      } catch (error) {
-        console.error(
-          `Failed sending to ${row.phone}`,
-          error
-        );
-
-        await sql`
-          UPDATE OutreachQueue
-
-          SET status = 'Failed'
-
-          WHERE id = ${row.id}
-        `;
-
-        failCount++;
-      }
-    }
-
     return NextResponse.json({
-      message: "Batch processed successfully.",
-      processed: batch.length,
-      success: successCount,
-      failed: failCount,
+      message: "Queue processed successfully.",
+      processed: totalProcessed,
+      success: totalSuccess,
+      failed: totalFailed,
     });
   } catch (error) {
     console.error("Cron Error:", error);
 
-    return new NextResponse(
-      "Internal Server Error",
-      {
-        status: 500,
-      }
-    );
+    return new NextResponse("Internal Server Error", {
+      status: 500,
+    });
   }
+}
+
+export async function POST(request: Request) {
+  // Allow POST requests to trigger the exact same handler (useful for frontend direct calls)
+  return GET(request);
 }
