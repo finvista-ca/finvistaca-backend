@@ -23,11 +23,10 @@ export async function POST(request: Request) {
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
-    // Parse sheet as array of arrays (header: 1) so columns are accessed positionally:
-    // row[0] = Name, row[1] = Mobile, row[2] = 3rd Column Text
+    // Parse sheet as array of arrays (header: 1)
+    // row[0] = Name, row[1] = Mobile, row[2] = Reminder Type, row[3..21] = var1..var19
     const rows: any[][] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
 
-    // Filter out empty rows and skip the header row (index 0)
     const dataRows = rows.slice(1).filter(row => row && row.length > 0);
 
     if (dataRows.length === 0) {
@@ -56,8 +55,6 @@ export async function POST(request: Request) {
     for (const row of dataRows) {
       const clientName = String(row[0] || "").trim();
       let rawPhone = String(row[1] || "").replace(/\D/g, "");
-      
-      // Directly grabs whatever is in the 3rd column (index 2)! Falls back only if empty.
       const reminderType = String(row[2] || "").trim() || "General Reminder";
 
       if (!clientName || !rawPhone) continue;
@@ -71,20 +68,45 @@ export async function POST(request: Request) {
       if (rawPhone.length === 10) {
         const whatsappPhone = `91${rawPhone}`;
 
+        // Map positional Excel columns starting from index 3 to var1 through var19
+        const var1 = String(row[3] || "").trim();
+        const var2 = String(row[4] || "").trim();
+        const var3 = String(row[5] || "").trim();
+        const var4 = String(row[6] || "").trim();
+        const var5 = String(row[7] || "").trim();
+        const var6 = String(row[8] || "").trim();
+        const var7 = String(row[9] || "").trim();
+        const var8 = String(row[10] || "").trim();
+        const var9 = String(row[11] || "").trim();
+        const var10 = String(row[12] || "").trim();
+        const var11 = String(row[13] || "").trim();
+        const var12 = String(row[14] || "").trim();
+        const var13 = String(row[15] || "").trim();
+        const var14 = String(row[16] || "").trim();
+        const var15 = String(row[17] || "").trim();
+        const var16 = String(row[18] || "").trim();
+        const var17 = String(row[19] || "").trim();
+        const var18 = String(row[20] || "").trim();
+        const var19 = String(row[21] || "").trim();
+
         await sql`
           INSERT INTO OutreachQueue (
             campaign_id,
             client_name,
             phone,
             reminder_type,
-            status
+            status,
+            var1, var2, var3, var4, var5, var6, var7, var8, var9, var10,
+            var11, var12, var13, var14, var15, var16, var17, var18, var19
           )
           VALUES (
             ${campaignId},
             ${clientName},
             ${whatsappPhone},
             ${reminderType},
-            'Pending'
+            'Pending',
+            ${var1}, ${var2}, ${var3}, ${var4}, ${var5}, ${var6}, ${var7}, ${var8}, ${var9}, ${var10},
+            ${var11}, ${var12}, ${var13}, ${var14}, ${var15}, ${var16}, ${var17}, ${var18}, ${var19}
           )
         `;
 

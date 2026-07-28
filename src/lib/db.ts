@@ -1,3 +1,5 @@
+// app/lib/db.ts (or your current db file path)
+
 import { neon } from "@neondatabase/serverless";
 
 if (!process.env.DATABASE_URL) {
@@ -66,7 +68,7 @@ export async function initializeDatabase() {
     `;
 
     // ===========================
-    // 5. Outreach Queue
+    // 5. Outreach Queue (Updated with template variables var1 - var19)
     // ===========================
     await sql`
       CREATE TABLE IF NOT EXISTS OutreachQueue (
@@ -77,6 +79,10 @@ export async function initializeDatabase() {
         reminder_type TEXT,
         status VARCHAR(50) DEFAULT 'Pending',
         meta_message_id VARCHAR(255),
+        var1 TEXT, var2 TEXT, var3 TEXT, var4 TEXT, var5 TEXT,
+        var6 TEXT, var7 TEXT, var8 TEXT, var9 TEXT, var10 TEXT,
+        var11 TEXT, var12 TEXT, var13 TEXT, var14 TEXT, var15 TEXT,
+        var16 TEXT, var17 TEXT, var18 TEXT, var19 TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         sent_at TIMESTAMP,
         delivered_at TIMESTAMP
@@ -141,17 +147,14 @@ export async function initializeDatabase() {
     `;
 
     await sql`
-  CREATE TABLE IF NOT EXISTS ConversationState (
-    phone VARCHAR(20) PRIMARY KEY,
-    selected_branch VARCHAR(100),
-    selected_date DATE,
-     selected_service VARCHAR(255),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-`;
-
-
-
+      CREATE TABLE IF NOT EXISTS ConversationState (
+        phone VARCHAR(20) PRIMARY KEY,
+        selected_branch VARCHAR(100),
+        selected_date DATE,
+        selected_service VARCHAR(255),
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
 
     // ===========================
     // INDEXES
