@@ -13,9 +13,9 @@ const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => st
   "income_tax_due_dates": {
     name: "income_tax_due_dates_reminder",
     getVars: (row) => [
-      row.var1 || "I R K & ASSOCIATES",
+      row.var1 || "2026 - 27",
       row.var2 || "CA Rama Kishore Itla",
-      row.var3 || "2026-27",
+      row.var3 || "I R K & ASSOCIATES",
       row.var4 || "31st July 2026",
       row.var5 || "31st August 2026",
       row.var6 || "31st October 2026",
