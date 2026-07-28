@@ -8,44 +8,91 @@ import { sendOutreachTemplate } from "@/lib/whatsapp";
 const CRON_SECRET =
   process.env.CRON_SECRET || "development_cron_bypass";    
 
-// Map your database reminder types to their verified Meta template names and required variable fields from your CSV data
+// Map your database reminder types to their verified Meta templates with explicit String casting for all variables
 const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => string[] }> = {
   "income_tax_due_dates": {
     name: "income_tax_due_dates_reminder",
     getVars: (row) => [
-      row.var1, row.var2, row.var3, row.var4, row.var5, 
-      row.var6, row.var7, row.var8, row.var9, row.var10, 
-      row.var11, row.var12
+      String(row.var1 || ""),
+      String(row.var2 || ""),
+      String(row.var3 || ""),
+      String(row.var4 || ""),
+      String(row.var5 || ""),
+      String(row.var6 || ""),
+      String(row.var7 || ""),
+      String(row.var8 || ""),
+      String(row.var9 || ""),
+      String(row.var10 || ""),
+      String(row.var11 || ""),
+      String(row.var12 || ""),
     ],
   },
   "income_tax_doc_checklist": {
     name: "income_tax_doc_checklist",
     getVars: (row) => [
-      row.var1, row.var2, row.var3, row.var4, row.var5, 
-      row.var6, row.var7, row.var8, row.var9, row.var10
+      String(row.var1 || ""),
+      String(row.var2 || ""),
+      String(row.var3 || ""),
+      String(row.var4 || ""),
+      String(row.var5 || ""),
+      String(row.var6 || ""),
+      String(row.var7 || ""),
+      String(row.var8 || ""),
+      String(row.var9 || ""),
+      String(row.var10 || ""),
     ],
   },
   "gst_annual_return": {
     name: "gst_annual_return_reminder",
     getVars: (row) => [
-      row.var1, row.var2, row.var3, row.var4, row.var5, 
-      row.var6, row.var7, row.var8, row.var9, row.var10, row.var11
+      String(row.var1 || ""),
+      String(row.var2 || ""),
+      String(row.var3 || ""),
+      String(row.var4 || ""),
+      String(row.var5 || ""),
+      String(row.var6 || ""),
+      String(row.var7 || ""),
+      String(row.var8 || ""),
+      String(row.var9 || ""),
+      String(row.var10 || ""),
+      String(row.var11 || ""),
     ],
   },
   "gst_regular_returns": {
     name: "gst_regular_returns_reminder",
     getVars: (row) => [
-      row.var1, row.var2, row.var3, row.var4, row.var5, 
-      row.var6, row.var7, row.var8, row.var9, row.var10, 
-      row.var11, row.var12, row.var13, row.var14, row.var15, 
-      row.var16, row.var17, row.var18, row.var19
+      String(row.var1 || ""),
+      String(row.var2 || ""),
+      String(row.var3 || ""),
+      String(row.var4 || ""),
+      String(row.var5 || ""),
+      String(row.var6 || ""),
+      String(row.var7 || ""),
+      String(row.var8 || ""),
+      String(row.var9 || ""),
+      String(row.var10 || ""),
+      String(row.var11 || ""),
+      String(row.var12 || ""),
+      String(row.var13 || ""),
+      String(row.var14 || ""),
+      String(row.var15 || ""),
+      String(row.var16 || ""),
+      String(row.var17 || ""),
+      String(row.var18 || ""),
+      String(row.var19 || ""),
     ],
   },
   "roc_annual_returns": {
     name: "roc_annual_returns_reminder",
     getVars: (row) => [
-      row.var1, row.var2, row.var3, row.var4, 
-      row.var5, row.var6, row.var7, row.var8
+      String(row.var1 || ""),
+      String(row.var2 || ""),
+      String(row.var3 || ""),
+      String(row.var4 || ""),
+      String(row.var5 || ""),
+      String(row.var6 || ""),
+      String(row.var7 || ""),
+      String(row.var8 || ""),
     ],
   },
 };
@@ -133,7 +180,6 @@ async function processOutreachBatch() {
 }
 
 export async function GET(request: Request) {
-  // Verify request
   const authHeader = request.headers.get("authorization");
   const url = new URL(request.url);
   const secretQuery = url.searchParams.get("secret");
@@ -149,7 +195,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Process the first batch immediately
     let totalProcessed = 0;
     let totalSuccess = 0;
     let totalFailed = 0;
@@ -159,7 +204,6 @@ export async function GET(request: Request) {
     totalSuccess += result.success;
     totalFailed += result.failed;
 
-    // If there are still more pending messages left, loop automatically to clear the queue instantly!
     while (result.processed > 0) {
       result = await processOutreachBatch();
       totalProcessed += result.processed;
@@ -189,6 +233,5 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  // Allow POST requests to trigger the exact same handler (useful for frontend direct calls)
   return GET(request);
 }
