@@ -4,102 +4,107 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { sendOutreachTemplate } from "@/lib/whatsapp";
 
-// A secure token checked by Vercel to ensure only Vercel can trigger this cron job
-const CRON_SECRET =
-  process.env.CRON_SECRET || "development_cron_bypass";    
+const CRON_SECRET = process.env.CRON_SECRET || "development_cron_bypass";    
 
-// Map your database reminder types to their verified Meta templates with explicit String casting for all variables
+// Helper to safely extract a variable checking multiple possible key casings
+const getVal = (row: any, keys: string[]): string => {
+  for (const k of keys) {
+    if (row[k] !== null && row[k] !== undefined && row[k] !== "") {
+      return String(row[k]);
+    }
+  }
+  return ""; // If truly missing in DB
+};
+
 const TEMPLATE_MAPPING: Record<string, { name: string; getVars: (row: any) => string[] }> = {
   "income_tax_due_dates": {
     name: "income_tax_due_dates_reminder",
     getVars: (row) => [
-      String(row.var1 || ""),
-      String(row.var2 || ""),
-      String(row.var3 || ""),
-      String(row.var4 || ""),
-      String(row.var5 || ""),
-      String(row.var6 || ""),
-      String(row.var7 || ""),
-      String(row.var8 || ""),
-      String(row.var9 || ""),
-      String(row.var10 || ""),
-      String(row.var11 || ""),
-      String(row.var12 || ""),
+      getVal(row, ["var1", "Var1", "VAR1"]),
+      getVal(row, ["var2", "Var2", "VAR2"]),
+      getVal(row, ["var3", "Var3", "VAR3"]),
+      getVal(row, ["var4", "Var4", "VAR4"]),
+      getVal(row, ["var5", "Var5", "VAR5"]),
+      getVal(row, ["var6", "Var6", "VAR6"]),
+      getVal(row, ["var7", "Var7", "VAR7"]),
+      getVal(row, ["var8", "Var8", "VAR8"]),
+      getVal(row, ["var9", "Var9", "VAR9"]),
+      getVal(row, ["var10", "Var10", "VAR10"]),
+      getVal(row, ["var11", "Var11", "VAR11"]),
+      getVal(row, ["var12", "Var12", "VAR12"]),
     ],
   },
   "income_tax_doc_checklist": {
     name: "income_tax_doc_checklist",
     getVars: (row) => [
-      String(row.var1 || ""),
-      String(row.var2 || ""),
-      String(row.var3 || ""),
-      String(row.var4 || ""),
-      String(row.var5 || ""),
-      String(row.var6 || ""),
-      String(row.var7 || ""),
-      String(row.var8 || ""),
-      String(row.var9 || ""),
-      String(row.var10 || ""),
+      getVal(row, ["var1", "Var1", "VAR1"]),
+      getVal(row, ["var2", "Var2", "VAR2"]),
+      getVal(row, ["var3", "Var3", "VAR3"]),
+      getVal(row, ["var4", "Var4", "VAR4"]),
+      getVal(row, ["var5", "Var5", "VAR5"]),
+      getVal(row, ["var6", "Var6", "VAR6"]),
+      getVal(row, ["var7", "Var7", "VAR7"]),
+      getVal(row, ["var8", "Var8", "VAR8"]),
+      getVal(row, ["var9", "Var9", "VAR9"]),
+      getVal(row, ["var10", "Var10", "VAR10"]),
     ],
   },
   "gst_annual_return": {
     name: "gst_annual_return_reminder",
     getVars: (row) => [
-      String(row.var1 || ""),
-      String(row.var2 || ""),
-      String(row.var3 || ""),
-      String(row.var4 || ""),
-      String(row.var5 || ""),
-      String(row.var6 || ""),
-      String(row.var7 || ""),
-      String(row.var8 || ""),
-      String(row.var9 || ""),
-      String(row.var10 || ""),
-      String(row.var11 || ""),
+      getVal(row, ["var1", "Var1", "VAR1"]),
+      getVal(row, ["var2", "Var2", "VAR2"]),
+      getVal(row, ["var3", "Var3", "VAR3"]),
+      getVal(row, ["var4", "Var4", "VAR4"]),
+      getVal(row, ["var5", "Var5", "VAR5"]),
+      getVal(row, ["var6", "Var6", "VAR6"]),
+      getVal(row, ["var7", "Var7", "VAR7"]),
+      getVal(row, ["var8", "Var8", "VAR8"]),
+      getVal(row, ["var9", "Var9", "VAR9"]),
+      getVal(row, ["var10", "Var10", "VAR10"]),
+      getVal(row, ["var11", "Var11", "VAR11"]),
     ],
   },
   "gst_regular_returns": {
     name: "gst_regular_returns_reminder",
     getVars: (row) => [
-      String(row.var1 || ""),
-      String(row.var2 || ""),
-      String(row.var3 || ""),
-      String(row.var4 || ""),
-      String(row.var5 || ""),
-      String(row.var6 || ""),
-      String(row.var7 || ""),
-      String(row.var8 || ""),
-      String(row.var9 || ""),
-      String(row.var10 || ""),
-      String(row.var11 || ""),
-      String(row.var12 || ""),
-      String(row.var13 || ""),
-      String(row.var14 || ""),
-      String(row.var15 || ""),
-      String(row.var16 || ""),
-      String(row.var17 || ""),
-      String(row.var18 || ""),
-      String(row.var19 || ""),
+      getVal(row, ["var1", "Var1", "VAR1"]),
+      getVal(row, ["var2", "Var2", "VAR2"]),
+      getVal(row, ["var3", "Var3", "VAR3"]),
+      getVal(row, ["var4", "Var4", "VAR4"]),
+      getVal(row, ["var5", "Var5", "VAR5"]),
+      getVal(row, ["var6", "Var6", "VAR6"]),
+      getVal(row, ["var7", "Var7", "VAR7"]),
+      getVal(row, ["var8", "Var8", "VAR8"]),
+      getVal(row, ["var9", "Var9", "VAR9"]),
+      getVal(row, ["var10", "Var10", "VAR10"]),
+      getVal(row, ["var11", "Var11", "VAR11"]),
+      getVal(row, ["var12", "Var12", "VAR12"]),
+      getVal(row, ["var13", "Var13", "VAR13"]),
+      getVal(row, ["var14", "Var14", "VAR14"]),
+      getVal(row, ["var15", "Var15", "VAR15"]),
+      getVal(row, ["var16", "Var16", "VAR16"]),
+      getVal(row, ["var17", "Var17", "VAR17"]),
+      getVal(row, ["var18", "Var18", "VAR18"]),
+      getVal(row, ["var19", "Var19", "VAR19"]),
     ],
   },
   "roc_annual_returns": {
     name: "roc_annual_returns_reminder",
     getVars: (row) => [
-      String(row.var1 || ""),
-      String(row.var2 || ""),
-      String(row.var3 || ""),
-      String(row.var4 || ""),
-      String(row.var5 || ""),
-      String(row.var6 || ""),
-      String(row.var7 || ""),
-      String(row.var8 || ""),
+      getVal(row, ["var1", "Var1", "VAR1"]),
+      getVal(row, ["var2", "Var2", "VAR2"]),
+      getVal(row, ["var3", "Var3", "VAR3"]),
+      getVal(row, ["var4", "Var4", "VAR4"]),
+      getVal(row, ["var5", "Var5", "VAR5"]),
+      getVal(row, ["var6", "Var6", "VAR6"]),
+      getVal(row, ["var7", "Var7", "VAR7"]),
+      getVal(row, ["var8", "Var8", "VAR8"]),
     ],
   },
 };
 
-// Core logic handler for processing batches
 async function processOutreachBatch() {
-  // Lock next 10 pending messages
   const batch = await sql`
     WITH locked_rows AS (
       SELECT id
@@ -142,6 +147,13 @@ async function processOutreachBatch() {
       }
 
       const variables = config.getVars(row);
+
+      // Check if any variable is empty and log it for debugging
+      variables.forEach((v, idx) => {
+        if (!v) {
+          console.warn(`Warning: Variable index ${idx + 1} is empty for row ID ${row.id}`);
+        }
+      });
 
       const response = await sendOutreachTemplate(
         row.phone,
@@ -189,9 +201,7 @@ export async function GET(request: Request) {
   const isDev = process.env.NODE_ENV !== "production";
 
   if (!isValidCronHeader && !isValidQuery && !isDev) {
-    return new NextResponse("Unauthorized", {
-      status: 401,
-    });
+    return new NextResponse("Unauthorized", { status: 401 });
   }
 
   try {
@@ -212,9 +222,7 @@ export async function GET(request: Request) {
     }
 
     if (totalProcessed === 0) {
-      return NextResponse.json({
-        message: "No pending outreach messages.",
-      });
+      return NextResponse.json({ message: "No pending outreach messages." });
     }
 
     return NextResponse.json({
@@ -225,10 +233,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Cron Error:", error);
-
-    return new NextResponse("Internal Server Error", {
-      status: 500,
-    });
+    return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
 
