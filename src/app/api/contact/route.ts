@@ -73,12 +73,9 @@ export async function POST(request: Request) {
     // 4. Database: Consultations Table
     // ==================================================
     await sql`
-      INSERT INTO Consultations (client_id, name, phone, email, service, branch, status)
+      INSERT INTO Consultations (client_id, service, branch, status)
       VALUES (
         ${clientId},
-        ${finalName.trim()},
-        ${whatsappPhone},
-        ${finalEmail?.trim() ?? null},
         ${finalService?.trim() ?? "General Consultation"},
         ${finalBranch?.trim() ?? "Not Specified"},
         'Pending'
