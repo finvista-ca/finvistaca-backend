@@ -218,17 +218,24 @@ export async function POST(request: Request) {
             "⚠️ Sorry, this slot was already booked or is no longer available. Please type *Book* to start a new selection."
           );
         } else {
-          // Check for existing pending consultation from website form to preserve service & record
-          const existingPending = await sql`
+          // Look up pending consultation using client_id safely
+          let pendingRecordId = null;
+          let webService = null;
+
+          const pendingRes = await sql`
             SELECT id, service FROM Consultations 
-            WHERE phone = ${senderPhone} AND status = 'Pending'
+            WHERE client_id = ${clientId} AND status = 'Pending'
             ORDER BY created_at DESC LIMIT 1
           `;
+          
+          if (pendingRes.length > 0) {
+            pendingRecordId = pendingRes[0].id;
+            webService = pendingRes[0].service;
+          }
 
           let chosenService = "General Consultation";
 
-          if (existingPending.length > 0) {
-            const webService = existingPending[0].service;
+          if (pendingRecordId) {
             if (webService && webService !== "Not specified" && webService !== "General Consultation") {
               chosenService = webService;
             }
@@ -242,13 +249,13 @@ export async function POST(request: Request) {
                   status = 'Confirmed',
                   date = ${bookedSlot.date},
                   time = ${bookedSlot.time}
-              WHERE id = ${existingPending[0].id}
+              WHERE id = ${pendingRecordId}
             `;
           } else {
             // Fallback for bot-initiated flow (no web record exists)
             await sql`
-              INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time, phone, name)
-              VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, 'General Consultation', 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time}, ${senderPhone}, ${senderName})
+              INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
+              VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, 'General Consultation', 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
             `;
             chosenService = "General Consultation";
           }
