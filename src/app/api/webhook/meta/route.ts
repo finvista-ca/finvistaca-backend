@@ -172,7 +172,7 @@ export async function POST(request: Request) {
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
 
-        // Immediately wipe the state FIRST to lock out any concurrent duplicate slot clicks
+        // Immediately wipe the conversation state FIRST to lock out any concurrent duplicate slot clicks
         await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
 
         const clientRes = await sql`
@@ -183,7 +183,6 @@ export async function POST(request: Request) {
         `;
         const clientId = clientRes[0].id;
 
-        const chosenService = activeState.selected_service || "General Consultation";
         let bookedSlot = null;
 
         const slotRes = await sql`
@@ -219,10 +218,40 @@ export async function POST(request: Request) {
             "⚠️ Sorry, this slot was already booked or is no longer available. Please type *Book* to start a new selection."
           );
         } else {
-          await sql`
-            INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time)
-            VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time})
+          // 🔍 CHECK FOR EXISTING PENDING CONSULTATION FROM WEB FORM
+          const existingPending = await sql`
+            SELECT id, service FROM Consultations 
+            WHERE phone = ${senderPhone} AND status = 'Pending'
+            ORDER BY created_at DESC LIMIT 1
           `;
+
+          let chosenService = "General Consultation";
+
+          if (existingPending.length > 0) {
+            // Preserve service from website form if it wasn't a generic placeholder
+            const webService = existingPending[0].service;
+            if (webService && webService !== "Not specified" && webService !== "General Consultation") {
+              chosenService = webService;
+            }
+
+            // ⚡ UPDATE THE EXISTING PENDING RECORD TO CONFIRMED
+            await sql`
+              UPDATE Consultations
+              SET slot_id = ${bookedSlot.id},
+                  branch = ${bookedSlot.branch},
+                  service = ${chosenService},
+                  status = 'Confirmed',
+                  date = ${bookedSlot.date},
+                  time = ${bookedSlot.time}
+              WHERE id = ${existingPending[0].id}
+            `;
+          } else {
+            // Fallback: If no web form record exists, insert a new confirmed record
+            await sql`
+              INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time, phone, name)
+              VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time}, ${senderPhone}, ${senderName})
+            `;
+          }
 
           const formattedDate = new Date(bookedSlot.date).toLocaleDateString("en-IN", {
             weekday: "short",
@@ -241,7 +270,7 @@ export async function POST(request: Request) {
           if (adminPhone) {
             await sendWhatsAppText(
               adminPhone,
-              `🚨 *New Consultation Booking Received!*\n\n👤 *Client:* ${senderName} (${senderPhone})\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}`
+              `🚨 *Consultation Confirmed via WhatsApp!*\n\n👤 *Client:* ${senderName} (${senderPhone})\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}`
             );
           }
         }
