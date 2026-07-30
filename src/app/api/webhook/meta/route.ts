@@ -52,7 +52,6 @@ export async function POST(request: Request) {
     const messageId = msg.id;
 
     // ── 0. STRICT DEDUPLICATION GUARD ────────────────────────────────────────
-    // Prevents Meta's concurrent webhook retries from processing the same event twice
     const webhookCheck = await sql`
       INSERT INTO ProcessedWebhooks (message_id) 
       VALUES (${messageId}) 
@@ -64,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     const stateCheck = await sql`
-      SELECT selected_service, selected_branch, selected_date 
+      SELECT selected_branch, selected_date 
       FROM ConversationState 
       WHERE phone = ${senderPhone}
     `;
@@ -111,7 +110,6 @@ export async function POST(request: Request) {
           WHERE phone = ${senderPhone}
         `;
 
-        // ⚡ INSTANT FEEDBACK: Let the user know slots are being fetched
         await sendWhatsAppText(
           senderPhone,
           `⏳ Fetching available slots for ${selectedTitle}... Please give us a second.`
@@ -164,7 +162,6 @@ export async function POST(request: Request) {
       else if (selectedId.startsWith("SLOT_")) {
         const activeState = stateCheck[0];
         
-        // If state was already wiped out, this is a duplicate webhook callback. Ignore it!
         if (!activeState || !activeState.selected_branch || !activeState.selected_date) {
           return new NextResponse("OK", { status: 200 });
         }
@@ -172,7 +169,6 @@ export async function POST(request: Request) {
         const slotIdStr = selectedId.replace("SLOT_", "").trim();
         const slotIdNum = parseInt(slotIdStr, 10);
 
-        // Immediately wipe the conversation state FIRST to lock out any concurrent duplicate slot clicks
         await sql`DELETE FROM ConversationState WHERE phone = ${senderPhone}`;
 
         const clientRes = await sql`
@@ -218,7 +214,7 @@ export async function POST(request: Request) {
             "⚠️ Sorry, this slot was already booked or is no longer available. Please type *Book* to start a new selection."
           );
         } else {
-          // 🔍 CHECK FOR EXISTING PENDING CONSULTATION FROM WEB FORM
+          // Check for existing pending consultation from web form to preserve service
           const existingPending = await sql`
             SELECT id, service FROM Consultations 
             WHERE phone = ${senderPhone} AND status = 'Pending'
@@ -228,13 +224,12 @@ export async function POST(request: Request) {
           let chosenService = "General Consultation";
 
           if (existingPending.length > 0) {
-            // Preserve service from website form if it wasn't a generic placeholder
             const webService = existingPending[0].service;
             if (webService && webService !== "Not specified" && webService !== "General Consultation") {
               chosenService = webService;
             }
 
-            // ⚡ UPDATE THE EXISTING PENDING RECORD TO CONFIRMED
+            // Update existing pending record from website form
             await sql`
               UPDATE Consultations
               SET slot_id = ${bookedSlot.id},
@@ -246,11 +241,12 @@ export async function POST(request: Request) {
               WHERE id = ${existingPending[0].id}
             `;
           } else {
-            // Fallback: If no web form record exists, insert a new confirmed record
+            // Fallback for bot-initiated flow (no web record exists)
             await sql`
               INSERT INTO Consultations (client_id, slot_id, branch, service, status, date, time, phone, name)
-              VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, ${chosenService}, 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time}, ${senderPhone}, ${senderName})
+              VALUES (${clientId}, ${bookedSlot.id}, ${bookedSlot.branch}, 'General Consultation', 'Confirmed', ${bookedSlot.date}, ${bookedSlot.time}, ${senderPhone}, ${senderName})
             `;
+            chosenService = "General Consultation";
           }
 
           const formattedDate = new Date(bookedSlot.date).toLocaleDateString("en-IN", {
@@ -259,13 +255,11 @@ export async function POST(request: Request) {
             month: "short"
           });
 
-          // 1. Send confirmation message to the Client
           await sendWhatsAppText(
             senderPhone,
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // 2. Send notification alert to the Admin
           const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER;
           if (adminPhone) {
             await sendWhatsAppText(

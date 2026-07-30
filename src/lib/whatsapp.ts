@@ -1,3 +1,5 @@
+// src/lib/whatsapp.ts
+
 const GRAPH_API_VERSION = "v19.0";
 
 const BRANCHES = [
@@ -41,8 +43,6 @@ async function sendToMeta(body: object): Promise<{ message_id?: string }> {
   });
 
   const data = await res.json();
-
-  console.log("Meta Response:", JSON.stringify(data, null, 2));
 
   if (!res.ok) {
     console.error("Meta API error:", JSON.stringify(data, null, 2));
@@ -118,7 +118,7 @@ export async function sendToMetaList(
 }
 
 /**
- * Branch Selection
+ * Branch Selection (Used by WhatsApp Bot Flow)
  */
 export async function sendBranchSelectionList(to: string) {
   const rows = BRANCHES.map((branch) => ({
@@ -138,7 +138,7 @@ export async function sendBranchSelectionList(to: string) {
 }
 
 /**
- * Consultation Date Selection
+ * Consultation Date Selection (Used by both flows)
  */
 export async function sendDateSelectionList(to: string) {
   const dates = [];
@@ -188,7 +188,7 @@ export async function sendDateSelectionList(to: string) {
 }
 
 /**
- * Sends WhatsApp Template Message
+ * Sends WhatsApp Template Message (Website Flow trigger)
  */
 export async function sendOutreachTemplate(
   to: string,
