@@ -184,7 +184,7 @@ export async function POST(request: Request) {
         const slotRes = await sql`
           UPDATE TimeSlots
           SET is_booked = TRUE, status = 'Booked'
-          WHERE id = ${slotIdNum} AND is_booked = FALSE
+          WHERE id = ${slotIdNum} AND (is_booked = FALSE OR is_booked IS NULL)
           RETURNING id, branch, date, time
         `;
 
@@ -196,12 +196,13 @@ export async function POST(request: Request) {
             SET is_booked = TRUE, status = 'Booked'
             WHERE branch = ${activeState.selected_branch} 
               AND date = ${activeState.selected_date}::date 
-              AND is_booked = FALSE
+              AND (is_booked = FALSE OR is_booked IS NULL)
               AND (
                 to_char(time, 'HH12:MI AM') ILIKE ${"%" + selectedTitle + "%"}
                 OR to_char(time, 'HH24:MI') ILIKE ${"%" + selectedTitle + "%"}
               )
             RETURNING id, branch, date, time
+            LIMIT 1
           `;
           if (fallbackRes.length > 0) {
             bookedSlot = fallbackRes[0];
@@ -229,7 +230,7 @@ export async function POST(request: Request) {
               chosenService = webService;
             }
 
-            // Update existing pending record from website form
+            // Update website-initiated record to Confirmed
             await sql`
               UPDATE Consultations
               SET slot_id = ${bookedSlot.id},
@@ -255,6 +256,7 @@ export async function POST(request: Request) {
             month: "short"
           });
 
+          // Send confirmation message to client including the dynamically grabbed service
           await sendWhatsAppText(
             senderPhone,
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
@@ -264,7 +266,7 @@ export async function POST(request: Request) {
           if (adminPhone) {
             await sendWhatsAppText(
               adminPhone,
-              `🚨 *Consultation Confirmed via WhatsApp!*\n\n👤 *Client:* ${senderName} (${senderPhone})\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}`
+              `🚨 *Consultation Confirmed!*\n\n👤 *Client:* ${senderName} (${senderPhone})\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}`
             );
           }
         }
