@@ -7,6 +7,7 @@ import {
   sendBranchSelectionList,
   sendDateSelectionList,
   sendWhatsAppText,
+  sendOutreachTemplate,
 } from "@/lib/whatsapp";
 import {
   getAvailableSlots,
@@ -266,18 +267,26 @@ export async function POST(request: Request) {
             month: "short"
           });
 
-          // 1. Send confirmation message to the Client with the correct service name
+          // 1. Send confirmation message to the Client
           await sendWhatsAppText(
             senderPhone,
             `✅ Your consultation has been successfully booked!\n\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}\n\nWe will share the meeting details shortly.`
           );
 
-          // 2. Send notification alert to the Admin
+          // 2. Send notification alert to the Admin via Approved Meta Template
           const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER;
           if (adminPhone) {
-            await sendWhatsAppText(
+            await sendOutreachTemplate(
               adminPhone,
-              `🚨 *New Consultation Booking Received!*\n\n👤 *Client:* ${senderName} (${senderPhone})\n📍 *Branch:* ${bookedSlot.branch}\n🛠️ *Service:* ${chosenService}\n📅 *Date:* ${formattedDate}\n⏰ *Time:* ${selectedTitle}`
+              "admin_booking_notification",
+              [
+                senderName,
+                senderPhone,
+                bookedSlot.branch,
+                chosenService,
+                formattedDate,
+                selectedTitle
+              ]
             );
           }
         }
